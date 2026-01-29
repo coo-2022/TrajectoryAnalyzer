@@ -1,0 +1,6 @@
+$c4230819-769a-48d2-ba03-5bbdd56b5633²¨$trajectory_id ÿÿÿÿÿÿÿÿÿ*string8!
+is_success ÿÿÿÿÿÿÿÿÿ*bool8!category ÿÿÿÿÿÿÿÿÿ*string8#
+root_cause ÿÿÿÿÿÿÿÿÿ*string8#
+suggestion ÿÿÿÿÿÿÿÿÿ*string8$analyzed_at ÿÿÿÿÿÿÿÿÿ*double8"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

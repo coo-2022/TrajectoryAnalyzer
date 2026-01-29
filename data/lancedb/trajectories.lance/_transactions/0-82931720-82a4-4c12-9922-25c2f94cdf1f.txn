@@ -1,0 +1,10 @@
+$82931720-82a4-4c12-9922-25c2f94cdf1f²‘$trajectory_id ÿÿÿÿÿÿÿÿÿ*string8 data_id ÿÿÿÿÿÿÿÿÿ*string8=question_vector ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:38408task ÿÿÿÿÿÿÿÿÿ*structquestion *string8ground_truth *string8#
+steps_json ÿÿÿÿÿÿÿÿÿ*string8.chat_completions_json ÿÿÿÿÿÿÿÿÿ*string8reward ÿÿÿÿÿÿÿÿÿ*double8(toolcall_reward	 ÿÿÿÿÿÿÿÿÿ*double8#
+res_reward
+ ÿÿÿÿÿÿÿÿÿ*double8"	exec_time ÿÿÿÿÿÿÿÿÿ*double8 epoch_id ÿÿÿÿÿÿÿÿÿ*int648$iteration_id ÿÿÿÿÿÿÿÿÿ*int648!	sample_id ÿÿÿÿÿÿÿÿÿ*int648$training_id ÿÿÿÿÿÿÿÿÿ*string8#
+agent_name ÿÿÿÿÿÿÿÿÿ*string8+termination_reason ÿÿÿÿÿÿÿÿÿ*string8"
+step_count ÿÿÿÿÿÿÿÿÿ*int648"is_analyzed ÿÿÿÿÿÿÿÿÿ*bool8"	tags_json ÿÿÿÿÿÿÿÿÿ*string8notes ÿÿÿÿÿÿÿÿÿ*string8$is_bookmarked ÿÿÿÿÿÿÿÿÿ*bool8source ÿÿÿÿÿÿÿÿÿ*string8#
+created_at ÿÿÿÿÿÿÿÿÿ*double8#
+updated_at ÿÿÿÿÿÿÿÿÿ*double8"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

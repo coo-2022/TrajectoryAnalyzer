@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stats API Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+        .test { background: white; padding: 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        pre { background: #f0f0f0; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Stats API Integration Test</h1>
+    <div id="output"></div>
+
+    <script>
+        const API_ROOT = 'http://localhost:8000';
+        const API_BASE = 'http://localhost:8000/api';
+
+        async function fetchJSON(endpoint, params = {}, useAPIBase = true) {
+            const baseURL = useAPIBase ? API_BASE : API_ROOT;
+            const url = new URL(`${baseURL}${endpoint}`);
+
+            Object.keys(params).forEach(key => {
+                if (params[key] !== undefined && params[key] !== '') {
+                    url.searchParams.append(key, params[key]);
+                }
+            });
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.statusText}`);
+            }
+            return await response.json();
+        }
+
+        async function runTests() {
+            const output = document.getElementById('output');
+            let html = '';
+
+            function log(message, type = 'info') {
+                const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+                html += `<p class="${className}">${message}</p>`;
+            }
+
+            function showTest(title, content) {
+                html += `<div class="test"><h3>${title}</h3>${content}</div>`;
+            }
+
+            try {
+                // Test 1: Stats API
+                log('Test 1: Calling /stats endpoint...', 'info');
+                const statsData = await fetchJSON('/stats', {}, false);
+
+                if (statsData && statsData.totalQuestions > 0) {
+                    log('✓ Stats API success!', 'success');
+                    showTest('Stats API Response', `
+                        <pre>${JSON.stringify(statsData, null, 2)}</pre>
+                        <p><strong>Frontend should display:</strong></p>
+                        <ul>
+                            <li>Total Questions: ${statsData.totalQuestions}</li>
+                            <li>Total Trajectories: ${statsData.totalTrajectories}</li>
+                            <li>Pass@1: ${(statsData.passAt1 * 100).toFixed(1)}%</li>
+                            <li>Pass@K: ${(statsData.passAtK * 100).toFixed(1)}%</li>
+                            <li>Easy: ${(statsData.simpleRatio * 100).toFixed(0)}%</li>
+                            <li>Medium: ${(statsData.mediumRatio * 100).toFixed(0)}%</li>
+                            <li>Hard: ${(statsData.hardRatio * 100).toFixed(0)}%</li>
+                        </ul>
+                    `);
+                } else {
+                    log('✗ Stats returned zero or invalid data', 'error');
+                    showTest('Stats Response', `<pre>${JSON.stringify(statsData, null, 2)}</pre>`);
+                }
+
+                // Test 2: Questions API
+                log('Test 2: Calling /api/questions endpoint...', 'info');
+                const questionsData = await fetchJSON('/questions', { page: 1, pageSize: 3 }, true);
+
+                if (questionsData && questionsData.data && questionsData.data.length > 0) {
+                    log('✓ Questions API success!', 'success');
+                    showTest('Questions API Response', `
+                        <p>Total: ${questionsData.total}</p>
+                        <pre>${JSON.stringify(questionsData.data, null, 2)}</pre>
+                    `);
+                } else {
+                    log('✗ Questions API failed', 'error');
+                }
+
+                // Final result
+                if (statsData.totalQuestions > 0) {
+                    log('\n✓✓✓ ALL TESTS PASSED ✓✓✓', 'success');
+                    log('Frontend should now display stats correctly at http://localhost:5173', 'success');
+                } else {
+                    log('\n✗✗✗ TESTS FAILED ✗✗✗', 'error');
+                }
+
+            } catch (error) {
+                log(`✗ Error: ${error.message}`, 'error');
+                showTest('Error Details', `<pre>${error.stack}</pre>`);
+            }
+
+            output.innerHTML = html;
+        }
+
+        // Run tests on page load
+        runTests();
+    </script>
+</body>
+</html>
