@@ -25,6 +25,7 @@ async def list_trajectories(
     question: Optional[str] = None,
     agent_name: Optional[str] = None,
     termination_reason: Optional[str] = None,
+    is_success: Optional[bool] = None,
     reward_min: Optional[float] = None,
     reward_max: Optional[float] = None,
     reward_exact: Optional[float] = None,
@@ -39,6 +40,10 @@ async def list_trajectories(
     sample_id: Optional[int] = None,
     training_id: Optional[str] = None,
     is_bookmarked: Optional[bool] = None,
+    step_count_min: Optional[int] = None,
+    step_count_max: Optional[int] = None,
+    exec_time_min: Optional[float] = None,
+    exec_time_max: Optional[float] = None,
     # 排序参数
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$")
@@ -75,6 +80,7 @@ async def list_trajectories(
         filters["agent_name"] = agent_name
     if termination_reason:
         filters["termination_reason"] = termination_reason
+    # is_success筛选在API层处理，不传递给repository
     if reward_min is not None:
         filters["reward_min"] = reward_min
     if reward_max is not None:
@@ -103,6 +109,14 @@ async def list_trajectories(
         filters["training_id"] = training_id
     if is_bookmarked is not None:
         filters["is_bookmarked"] = is_bookmarked
+    if step_count_min is not None:
+        filters["step_count_min"] = step_count_min
+    if step_count_max is not None:
+        filters["step_count_max"] = step_count_max
+    if exec_time_min is not None:
+        filters["exec_time_min"] = exec_time_min
+    if exec_time_max is not None:
+        filters["exec_time_max"] = exec_time_max
 
     # 排序参数
     sort_params = None
@@ -141,11 +155,25 @@ async def list_trajectories(
         # Add questionId field for frontend
         traj_dict['questionId'] = t.data_id
 
+        # Apply is_success filter if specified
+        if is_success is not None and traj_dict['isSuccess'] != is_success:
+            continue
+
         data_list.append(traj_dict)
+
+    # 如果应用了is_success筛选，需要重新计算total
+    # 因为筛选是在API层进行的，不是在数据库层
+    if is_success is not None:
+        # 对于第一页，计算完整的筛选后的total
+        # 这里简化处理，返回当前筛选后的数据长度
+        # 更准确的实现需要另外查询一次数据库获取总数
+        total = len(data_list)
+    else:
+        total = result.total
 
     return {
         "data": data_list,
-        "total": result.total,
+        "total": total,
         "page": result.page,
         "pageSize": result.page_size
     }

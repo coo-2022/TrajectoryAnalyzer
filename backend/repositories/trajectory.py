@@ -345,16 +345,17 @@ class TrajectoryRepository:
         """
         where_clauses = []
 
-        # 精确匹配字段
+        # 模糊匹配字段
         if "trajectory_id" in filters and filters["trajectory_id"]:
-            where_clauses.append(f"trajectory_id = '{filters['trajectory_id']}'")
+            where_clauses.append(f"trajectory_id LIKE '%{filters['trajectory_id']}%'")
 
         if "data_id" in filters and filters["data_id"]:
-            where_clauses.append(f"data_id = '{filters['data_id']}'")
+            where_clauses.append(f"data_id LIKE '%{filters['data_id']}%'")
 
         if "question" in filters and filters["question"]:
-            # 问题文本模糊匹配（需要在task字段中搜索）
-            where_clauses.append(f"task LIKE '%{filters['question']}%'")
+            # 问题文本模糊匹配（需要查询嵌套字段task.question）
+            # 注意：LanceDB的struct类型需要特殊处理
+            where_clauses.append(f"task.question LIKE '%{filters['question']}%'")
 
         if "agent_name" in filters and filters["agent_name"]:
             # Agent名称模糊匹配
@@ -416,6 +417,18 @@ class TrajectoryRepository:
 
         if "questionId" in filters and filters["questionId"]:
             where_clauses.append(f"data_id = '{filters['questionId']}'")
+
+        # Step count字段：支持范围筛选
+        if "step_count_min" in filters and filters["step_count_min"] is not None:
+            where_clauses.append(f"step_count >= {filters['step_count_min']}")
+        if "step_count_max" in filters and filters["step_count_max"] is not None:
+            where_clauses.append(f"step_count <= {filters['step_count_max']}")
+
+        # Execution time字段：支持范围筛选
+        if "exec_time_min" in filters and filters["exec_time_min"] is not None:
+            where_clauses.append(f"exec_time >= {filters['exec_time_min']}")
+        if "exec_time_max" in filters and filters["exec_time_max"] is not None:
+            where_clauses.append(f"exec_time <= {filters['exec_time_max']}")
 
         # 构建查询
         where_clause = " AND ".join(where_clauses) if where_clauses else None

@@ -22,7 +22,8 @@ import {
   Box,
   ListFilter,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  X
 } from 'lucide-react';
 
 // ==========================================
@@ -73,11 +74,12 @@ class APIBackend {
   }
 
   async getTrajectories(page = 1, pageSize = 20, filters = {}) {
+    // filters already contains page, pageSize and all filter params
+    // Just ensure page and pageSize are set correctly
     const params = {
+      ...filters,
       page,
-      pageSize,
-      id: filters.id,
-      questionId: filters.questionId
+      pageSize
     };
 
     const data = await this.fetchJSON('/trajectories', params);
@@ -251,7 +253,7 @@ const TABLE_COLUMNS = [
   { id: 'questionId', label: 'Question ID', filterType: 'text', sortable: true, width: 'w-40' },
   { id: 'task.question', label: 'Question', filterType: 'text', sortable: false, width: 'w-auto' },
   { id: 'isSuccess', label: 'Result', filterType: 'options', options: ['Success', 'Failed'], sortable: true, width: 'w-24' },
-  { id: 'category', label: 'Failure Type', filterType: 'options', options: ['Format Error', 'Logic Loop', 'Truncation'], sortable: true, width: 'w-32' },
+  { id: 'termination_reason', label: 'Termination Reason', filterType: 'options', options: ['success', 'failed'], sortable: true, width: 'w-36' },
   { id: 'rootCause', label: 'Root Cause', filterType: 'text', sortable: false, width: 'w-48' },
   { id: 'step_count', label: 'Steps', filterType: 'number', sortable: true, width: 'w-20' },
   { id: 'exec_time', label: 'Time', filterType: 'number', sortable: true, width: 'w-24' },
@@ -337,8 +339,11 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
       } else if (field === 'task.question' && filter.value) {
         params.question = filter.value;
       } else if (field === 'isSuccess' && filter.selected?.length > 0) {
-        params.is_success = filter.selected.includes('Success');
-      } else if (field === 'category' && filter.selected?.length > 0) {
+        // 只选了Success或只选了Failed时才筛选，两个都选相当于不筛选
+        if (filter.selected.length === 1) {
+          params.is_success = filter.selected.includes('Success') ? 'true' : 'false';
+        }
+      } else if (field === 'termination_reason' && filter.selected?.length > 0) {
         params.termination_reason = filter.selected.join(',');
       } else if (field === 'rootCause' && filter.value) {
         params.question = filter.value; // 搜索问题文本
@@ -378,53 +383,198 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
   const loadData = async (page) => {
     setLoading(true);
 
-    const filterParams = buildFilterParams();
-    const sortParams = sortField ? { field: sortField, order: sortOrder } : null;
+    try {
+      const filterParams = buildFilterParams();
+      const sortParams = sortField ? { field: sortField, order: sortOrder } : null;
 
-    // 调用后端API
-    const params = {
+      // 调用后端API
+      const params = {
         page,
         pageSize: 15,
         ...filterParams,
         ...(sortField && { sortBy: sortField, sort_order: sortOrder })
-    };
+      };
 
-    const res = await backend.getTrajectories(page, 15, params);
+      console.log('Loading trajectories with params:', params);
 
-    setState(prev => ({
+      const res = await backend.getTrajectories(page, 15, params);
+
+      console.log('API response:', res);
+
+      if (!res) {
+        console.error('API returned null response');
+        setState(prev => ({
+          ...prev,
+          trajectories: [],
+          total: 0,
+          page: page,
+          isLoaded: true
+        }));
+        return;
+      }
+
+      setState(prev => ({
         ...prev,
-        trajectories: res.data,
-        total: res.total,
+        trajectories: res.data || [],
+        total: res.total || 0,
         page: page,
         isLoaded: true
-    }));
-    setLoading(false);
+      }));
+    } catch (error) {
+      console.error('Error loading trajectories:', error);
+      setState(prev => ({
+        ...prev,
+        trajectories: [],
+        total: 0,
+        page: page,
+        isLoaded: true
+      }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 处理筛选应用
-  const handleFilterApply = (field, newFilter) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [field]: { ...prev[field], ...newFilter }
-    }));
-    // 重新加载数据
-    loadData(1);
+  const handleFilterApply = (field) => {
+    setColumnFilters(prev => {
+      const updated = {
+        ...prev,
+        [field]: { ...prev[field], active: true }
+      };
+      // 立即使用更新后的值构建参数
+      const params = buildFilterParamsFromFilters(updated);
+      // 异步加载数据
+      setTimeout(() => loadDataWithParams(1, params), 0);
+      return updated;
+    });
+  };
+
+  // 从filters对象直接构建参数（不依赖state）
+  const buildFilterParamsFromFilters = (filters) => {
+    const params = {};
+
+    Object.entries(filters).forEach(([fieldId, filter]) => {
+      if (!filter.active) return;
+
+      const field = fieldId;
+      if (field === 'trajectory_id' && filter.value) {
+        params.trajectory_id = filter.value;
+      } else if (field === 'questionId' && filter.value) {
+        params.data_id = filter.value;
+      } else if (field === 'task.question' && filter.value) {
+        params.question = filter.value;
+      } else if (field === 'isSuccess' && filter.selected?.length > 0) {
+        // 只选了Success或只选了Failed时才筛选，两个都选相当于不筛选
+        if (filter.selected.length === 1) {
+          params.is_success = filter.selected.includes('Success') ? 'true' : 'false';
+        }
+      } else if (field === 'termination_reason' && filter.selected?.length > 0) {
+        params.termination_reason = filter.selected.join(',');
+      } else if (field === 'rootCause' && filter.value) {
+        params.question = filter.value;
+      } else if (field === 'agent_name' && filter.value) {
+        params.agent_name = filter.value;
+      } else if (field === 'reward' && filter.conditions) {
+        if (filter.conditions.equals !== null && filter.conditions.equals !== undefined) {
+          params.reward_exact = filter.conditions.equals;
+        } else {
+          if (filter.conditions.greaterThan !== null && filter.conditions.greaterThan !== undefined) {
+            params.reward_min = filter.conditions.greaterThan;
+          }
+          if (filter.conditions.lessThan !== null && filter.conditions.lessThan !== undefined) {
+            params.reward_max = filter.conditions.lessThan;
+          }
+        }
+      } else if (field === 'step_count' && filter.conditions) {
+        if (filter.conditions.greaterThan !== null && filter.conditions.greaterThan !== undefined) {
+          params.step_count_min = filter.conditions.greaterThan;
+        }
+        if (filter.conditions.lessThan !== null && filter.conditions.lessThan !== undefined) {
+          params.step_count_max = filter.conditions.lessThan;
+        }
+      } else if (field === 'exec_time' && filter.conditions) {
+        if (filter.conditions.greaterThan !== null && filter.conditions.greaterThan !== undefined) {
+          params.exec_time_min = filter.conditions.greaterThan;
+        }
+        if (filter.conditions.lessThan !== null && filter.conditions.lessThan !== undefined) {
+          params.exec_time_max = filter.conditions.lessThan;
+        }
+      }
+    });
+
+    return params;
+  };
+
+  // 使用指定的参数加载数据
+  const loadDataWithParams = async (page, filterParams) => {
+    setLoading(true);
+
+    try {
+      const params = {
+        page,
+        pageSize: 15,
+        ...filterParams,
+        ...(sortField && { sortBy: sortField, sort_order: sortOrder })
+      };
+
+      console.log('Loading trajectories with params:', params);
+
+      const res = await backend.getTrajectories(page, 15, params);
+
+      console.log('API response:', res);
+
+      if (!res) {
+        console.error('API returned null response');
+        setState(prev => ({
+          ...prev,
+          trajectories: [],
+          total: 0,
+          page: page,
+          isLoaded: true
+        }));
+        return;
+      }
+
+      setState(prev => ({
+        ...prev,
+        trajectories: res.data || [],
+        total: res.total || 0,
+        page: page,
+        isLoaded: true
+      }));
+    } catch (error) {
+      console.error('Error loading trajectories:', error);
+      setState(prev => ({
+        ...prev,
+        trajectories: [],
+        total: 0,
+        page: page,
+        isLoaded: true
+      }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 处理筛选清除
   const handleFilterClear = (field) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [field]: {
-        ...prev[field],
-        active: false,
-        value: '',
-        selected: [],
-        conditions: {},
-      }
-    }));
-    // 重新加载数据
-    loadData(1);
+    setColumnFilters(prev => {
+      const updated = {
+        ...prev,
+        [field]: {
+          ...prev[field],
+          active: false,
+          value: '',
+          selected: [],
+          conditions: {},
+        }
+      };
+      // 立即使用更新后的值构建参数
+      const params = buildFilterParamsFromFilters(updated);
+      // 异步加载数据
+      setTimeout(() => loadDataWithParams(1, params), 0);
+      return updated;
+    });
   };
 
   // 清除所有筛选
@@ -443,19 +593,36 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
     setColumnFilters(resetFilters);
     setSortField(null);
     setSortOrder('desc');
-    loadData(1);
+    // 使用空参数加载所有数据
+    setTimeout(() => loadDataWithParams(1, {}), 0);
   };
 
   // 处理排序
   const handleSort = (field) => {
+    let newSortField, newSortOrder;
+
     if (sortField === field) {
       // 切换排序方向
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      newSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+      newSortField = field;
     } else {
-      setSortField(field);
-      setSortOrder('desc');
+      newSortField = field;
+      newSortOrder = 'desc';
     }
-    loadData(1);
+
+    setSortField(newSortField);
+    setSortOrder(newSortOrder);
+
+    // 立即使用当前的筛选条件和新的排序参数加载
+    const params = buildFilterParamsFromFilters(columnFilters);
+    setTimeout(() => {
+      const sortParams = {
+        ...params,
+        sortBy: newSortField,
+        sort_order: newSortOrder
+      };
+      loadDataWithParams(1, sortParams);
+    }, 0);
   };
 
   // 获取激活的筛选器数量
@@ -577,7 +744,7 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                                 />
                                 <div className="flex gap-2 mt-3">
                                   <button
-                                    onClick={() => handleFilterApply(col.id, columnFilters[col.id])}
+                                    onClick={() => handleFilterApply(col.id)}
                                     className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
                                   >
                                     OK
@@ -615,7 +782,7 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                                 ))}
                                 <div className="flex gap-2 mt-3 border-t pt-3">
                                   <button
-                                    onClick={() => handleFilterApply(col.id, columnFilters[col.id])}
+                                    onClick={() => handleFilterApply(col.id)}
                                     className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
                                   >
                                     OK
@@ -736,7 +903,7 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
 
                                 <div className="flex gap-2 mt-3 pt-2 border-t">
                                   <button
-                                    onClick={() => handleFilterApply(col.id, columnFilters[col.id])}
+                                    onClick={() => handleFilterApply(col.id)}
                                     className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
                                   >
                                     OK
@@ -772,7 +939,7 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
             <tbody className="bg-white divide-y divide-slate-200">
               {!state.isLoaded && loading ? (
                  <tr><td colSpan="10" className="p-10 text-center text-slate-500">Initializing...</td></tr>
-              ) : state.trajectories.map((t) => (
+              ) : (state.trajectories || []).map((t) => (
                 <tr key={t.trajectory_id} onClick={() => onSelectTrajectory(t.trajectory_id)} className="hover:bg-blue-50 cursor-pointer transition-colors group">
                   <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500 group-hover:text-blue-600 font-medium">
                     {t.trajectory_id}
@@ -781,7 +948,13 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                   <td className="px-6 py-4 text-sm text-slate-800"><div className="max-w-md truncate">{t.task?.question || t.question}</div></td>
                   <td className="px-6 py-4 whitespace-nowrap"><ResultBadge success={t.isSuccess} /></td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                    {t.isSuccess ? "-" : <span className="px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs">{t.category || "-"}</span>}
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      t.termination_reason === 'success'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}>
+                      {t.termination_reason || "-"}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
                       <div className="max-w-xs truncate" title={t.rootCause}>
@@ -797,7 +970,7 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                 </tr>
               ))}
 
-              {state.isLoaded && state.trajectories.length === 0 && (
+              {state.isLoaded && (state.trajectories || []).length === 0 && (
                   <tr><td colSpan="10" className="p-10 text-center text-slate-400">No results found.</td></tr>
               )}
             </tbody>
