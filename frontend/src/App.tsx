@@ -25,6 +25,7 @@ import {
   ExternalLink,
   X
 } from 'lucide-react';
+import AnalysisView from './views/AnalysisView';
 
 // ==========================================
 // 1. API Backend (Real Data)
@@ -259,6 +260,10 @@ const TABLE_COLUMNS = [
   { id: 'exec_time', label: 'Time', filterType: 'number', sortable: true, width: 'w-24' },
   { id: 'agent_name', label: 'Agent', filterType: 'text', sortable: true, width: 'w-32' },
   { id: 'reward', label: 'Reward', filterType: 'number', sortable: true, width: 'w-24' },
+  { id: 'epoch_id', label: 'Epoch', filterType: 'number', sortable: true, width: 'w-20' },
+  { id: 'iteration_id', label: 'Iteration', filterType: 'number', sortable: true, width: 'w-24' },
+  { id: 'sample_id', label: 'Sample', filterType: 'number', sortable: true, width: 'w-20' },
+  { id: 'training_id', label: 'Training ID', filterType: 'text', sortable: true, width: 'w-40' },
 ];
 
 const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
@@ -938,7 +943,7 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
               {!state.isLoaded && loading ? (
-                 <tr><td colSpan="10" className="p-10 text-center text-slate-500">Initializing...</td></tr>
+                 <tr><td colSpan="14" className="p-10 text-center text-slate-500">Initializing...</td></tr>
               ) : (state.trajectories || []).map((t) => (
                 <tr key={t.trajectory_id} onClick={() => onSelectTrajectory(t.trajectory_id)} className="hover:bg-blue-50 cursor-pointer transition-colors group">
                   <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500 group-hover:text-blue-600 font-medium">
@@ -967,11 +972,15 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                     <span className="border border-slate-100 rounded bg-slate-50 px-2 py-0.5">{t.agent_name || "-"}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.reward !== undefined ? t.reward.toFixed(1) : '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.epoch_id ?? '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.iteration_id ?? '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.sample_id ?? '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">{t.training_id || '-'}</td>
                 </tr>
               ))}
 
               {state.isLoaded && (state.trajectories || []).length === 0 && (
-                  <tr><td colSpan="10" className="p-10 text-center text-slate-400">No results found.</td></tr>
+                  <tr><td colSpan="14" className="p-10 text-center text-slate-400">No results found.</td></tr>
               )}
             </tbody>
           </table>
@@ -1158,29 +1167,6 @@ const TrajectoryDetailView = ({ trajectoryId, onBack }) => {
   );
 };
 
-// --- Page 3: Failure Analysis ---
-const FailureAnalysisView = () => (
-  <div className="bg-white p-10 rounded-xl border border-slate-200 text-center">
-    <AlertOctagon size={48} className="mx-auto text-amber-500 mb-4" />
-    <h2 className="text-xl font-bold text-slate-800">Attribution Analysis Chart</h2>
-    <p className="text-slate-500 mt-2">(This page requires aggregation API support, currently a placeholder)</p>
-    <div className="mt-8 grid grid-cols-3 gap-4 text-left">
-        <div className="p-4 bg-red-50 rounded border border-red-100">
-            <h4 className="font-bold text-red-800">Top 1: Format Error</h4>
-            <div className="w-full bg-red-200 h-1 mt-2"><div className="bg-red-500 h-1 w-[35%]"></div></div>
-        </div>
-        <div className="p-4 bg-orange-50 rounded border border-orange-100">
-            <h4 className="font-bold text-orange-800">Top 2: Logic Loop</h4>
-            <div className="w-full bg-orange-200 h-1 mt-2"><div className="bg-orange-500 h-1 w-[22%]"></div></div>
-        </div>
-        <div className="p-4 bg-slate-50 rounded border border-slate-200">
-            <h4 className="font-bold text-slate-800">Top 3: Truncation</h4>
-            <div className="w-full bg-slate-200 h-1 mt-2"><div className="bg-slate-500 h-1 w-[10%]"></div></div>
-        </div>
-    </div>
-  </div>
-);
-
 // ==========================================
 // 4. Main App Layout
 // ==========================================
@@ -1232,7 +1218,7 @@ export default function App() {
                 setState={setTrajectoryViewState}
             />
         );
-      case "analysis": return <FailureAnalysisView />;
+      case "analysis": return <AnalysisView />;
       default: return <DashboardView />;
     }
   };
@@ -1275,7 +1261,7 @@ export default function App() {
               <h1 className="text-2xl font-bold text-slate-900">
                 {activeTab === 'dashboard' && 'Analytics Overview'}
                 {activeTab === 'trajectories' && 'Trajectory List'}
-                {activeTab === 'analysis' && 'Failure Attribution'}
+                {activeTab === 'analysis' && 'Trajectory Analysis'}
               </h1>
             </div>
           )}
