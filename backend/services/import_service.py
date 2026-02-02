@@ -85,31 +85,17 @@ class ImportService:
         """验证轨迹数据"""
         errors = []
 
-        # 必需字段
+        # 必需字段（精简到最核心的）
         required_fields = [
             "trajectory_id",
             "data_id",
-            "task",
-            "reward",
-            "exec_time",
-            "agent_name",
-            "termination_reason"
         ]
 
         for field in required_fields:
             if field not in traj_data:
                 errors.append(f"Missing required field: {field}")
 
-        # 验证task字段
-        if "task" in traj_data:
-            task = traj_data["task"]
-            if isinstance(task, dict):
-                if "question" not in task:
-                    errors.append("task.question is required")
-            elif not isinstance(task, str):
-                errors.append("task must be a dict or string")
-
-        # 验证reward类型
+        # reward 字段可选，默认0.0
         if "reward" in traj_data:
             try:
                 float(traj_data["reward"])
@@ -125,6 +111,62 @@ class ImportService:
 
         return len(errors) == 0, errors
 
+    def _normalize_trajectory_data(self, traj_data: Dict[str, Any]) -> Dict[str, Any]:
+        """标准化轨迹数据，处理格式差异"""
+        normalized = traj_data.copy()
+
+        # 1. 处理缺失的必需字段
+        if "task" not in normalized:
+            # 从 chat_completions 中提取问题
+            if "chat_completions" in normalized and len(normalized["chat_completions"]) > 1:
+                user_msg = normalized["chat_completions"][1]
+                if isinstance(user_msg, dict) and user_msg.get("role") == "user":
+                    question = user_msg.get("content", "")
+                    normalized["task"] = {"question": question}
+            else:
+                normalized["task"] = {"question": ""}
+
+        # 2. 填充可选字段的默认值
+        normalized.setdefault("exec_time", 0.0)
+        normalized.setdefault("agent_name", "")
+        normalized.setdefault("termination_reason", "")
+        normalized.setdefault("toolcall_reward", 0.0)
+        normalized.setdefault("res_reward", 0.0)
+
+        # 3. 转换 reward 类型
+        if "reward" in normalized:
+            try:
+                normalized["reward"] = float(normalized["reward"])
+            except (ValueError, TypeError):
+                normalized["reward"] = 0.0
+
+        # 4. 标准化 steps 数据
+        if "steps" in normalized:
+            normalized_steps = []
+            for step in normalized["steps"]:
+                if isinstance(step, dict):
+                    normalized_step = step.copy()
+                    # 转换字符串类型的数字字段
+                    for field in ["reward", "mc_return", "done", "step_id"]:
+                        if field in normalized_step:
+                            if isinstance(normalized_step[field], str):
+                                if field in ["reward", "mc_return"]:
+                                    try:
+                                        normalized_step[field] = float(normalized_step[field])
+                                    except ValueError:
+                                        normalized_step[field] = 0.0
+                                elif field == "done":
+                                    normalized_step[field] = normalized_step[field].lower() == "true"
+                                elif field == "step_id":
+                                    try:
+                                        normalized_step[field] = int(normalized_step[field])
+                                    except ValueError:
+                                        normalized_step[field] = 0
+                    normalized_steps.append(normalized_step)
+            normalized["steps"] = normalized_steps
+
+        return normalized
+
     async def import_from_dict(self, traj_data: Dict[str, Any]) -> ImportResult:
         """从字典导入单个轨迹"""
         task_id = f"import_{int(time.time())}_{id(traj_data)}"
@@ -136,6 +178,9 @@ class ImportService:
         _import_tasks[task_id] = result
 
         try:
+            # 标准化数据
+            traj_data = self._normalize_trajectory_data(traj_data)
+
             # 验证数据
             is_valid, errors = self.validate_trajectory(traj_data)
             if not is_valid:
@@ -226,6 +271,9 @@ class ImportService:
             # 批量导入
             for i, traj_data in enumerate(trajectories):
                 try:
+                    # 标准化数据
+                    traj_data = self._normalize_trajectory_data(traj_data)
+
                     # 验证
                     is_valid, errors = self.validate_trajectory(traj_data)
                     if not is_valid:
@@ -312,6 +360,9 @@ class ImportService:
 
                     try:
                         traj_data = json.loads(line)
+
+                        # 标准化数据
+                        traj_data = self._normalize_trajectory_data(traj_data)
 
                         # 验证
                         is_valid, errors = self.validate_trajectory(traj_data)
