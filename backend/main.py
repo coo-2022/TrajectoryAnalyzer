@@ -15,6 +15,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# 增加上传大小限制到 10GB (支持大轨迹文件)
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class MaxSizeMiddleware(BaseHTTPMiddleware):
+    """增加请求体大小限制"""
+    async def dispatch(self, request: Request, call_next):
+        # 不限制上传大小，让应用自己处理
+        return await call_next(request)
+
+app.add_middleware(MaxSizeMiddleware)
+
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,

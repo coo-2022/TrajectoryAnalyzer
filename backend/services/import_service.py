@@ -25,6 +25,62 @@ class ImportService:
         self.vector_func = vector_func or create_default_vector_func()
         self.repository = TrajectoryRepository(self.db_uri, self.vector_func)
 
+        # 允许直接读取的目录列表（用于本地文件导入）
+        self.allowed_directories = self._load_allowed_directories()
+
+    def _load_allowed_directories(self) -> List[Path]:
+        """加载允许访问的目录"""
+        dirs = []
+
+        # 默认允许的目录
+        default_dirs = [
+            Path.home() / "Downloads",
+            Path.home() / "Documents",
+            Path.home() / "Desktop",
+            Path("/tmp"),
+        ]
+
+        for dir_path in default_dirs:
+            if dir_path.exists():
+                dirs.append(dir_path)
+
+        # 从配置文件加载额外目录
+        if hasattr(settings, 'allowed_import_directories'):
+            for dir_str in settings.allowed_import_directories:
+                dir_path = Path(dir_str).expanduser().resolve()
+                if dir_path.exists():
+                    dirs.append(dir_path)
+
+        return dirs
+
+    def is_path_allowed(self, file_path: str) -> tuple[bool, str]:
+        """检查文件路径是否在允许的目录内"""
+        try:
+            path = Path(file_path).expanduser().resolve()
+
+            # 检查文件是否存在
+            if not path.exists():
+                return False, f"File does not exist: {file_path}"
+
+            # 检查是否是文件（不是目录）
+            if not path.is_file():
+                return False, f"Not a file: {file_path}"
+
+            # 检查是否在允许的目录内
+            for allowed_dir in self.allowed_directories:
+                try:
+                    path.relative_to(allowed_dir)
+                    return True, ""
+                except ValueError:
+                    continue
+
+            # 如果没有匹配的目录，返回错误信息
+            allowed_paths = [str(d) for d in self.allowed_directories]
+            return False, f"Path not in allowed directories. Allowed: {', '.join(allowed_paths)}"
+
+        except Exception as e:
+            return False, f"Path validation error: {str(e)}"
+
     def validate_trajectory(self, traj_data: Dict[str, Any]) -> tuple[bool, List[str]]:
         """验证轨迹数据"""
         errors = []
@@ -122,7 +178,7 @@ class ImportService:
         return result
 
     async def import_from_json(self, file_path: str) -> ImportResult:
-        """从JSON文件导入轨迹"""
+        """从JSON文件导入轨迹（直接读取文件路径，无需拷贝）"""
         task_id = f"import_{int(time.time())}"
         result = ImportResult(
             task_id=task_id,
@@ -132,14 +188,17 @@ class ImportService:
         _import_tasks[task_id] = result
 
         try:
-            # 读取文件
-            path = Path(file_path)
-            if not path.exists():
+            # 验证路径
+            is_allowed, error_msg = self.is_path_allowed(file_path)
+            if not is_allowed:
                 result.success = False
-                result.errors.append(f"File not found: {file_path}")
+                result.errors.append(error_msg)
                 result.status = "failed"
                 return result
 
+            path = Path(file_path).expanduser().resolve()
+
+            # 直接读取文件，无需拷贝
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
@@ -204,7 +263,7 @@ class ImportService:
             result.completed_at = time.time()
 
             # 记录历史
-            self._add_history(task_id, path.name, result)
+            self._add_history(task_id, str(path.name), result)
 
         except json.JSONDecodeError as e:
             result.success = False
@@ -217,6 +276,93 @@ class ImportService:
 
         return result
 
+    async def import_from_jsonl(self, file_path: str) -> ImportResult:
+        """从JSONL文件导入轨迹（流式处理，适合超大文件）
+
+        JSONL格式：每行一个独立的JSON对象
+        {"trajectory_id": "1", ...}
+        {"trajectory_id": "2", ...}
+        """
+        task_id = f"import_{int(time.time())}"
+        result = ImportResult(
+            task_id=task_id,
+            status="processing",
+            progress=0,
+            message="Importing from JSONL file (streaming mode)"
+        )
+        _import_tasks[task_id] = result
+
+        try:
+            # 验证路径
+            is_allowed, error_msg = self.is_path_allowed(file_path)
+            if not is_allowed:
+                result.success = False
+                result.errors.append(error_msg)
+                result.status = "failed"
+                return result
+
+            path = Path(file_path).expanduser().resolve()
+
+            # 流式读取，逐行处理
+            total_count = 0
+            with open(path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    if not line.strip():  # 跳过空行
+                        continue
+
+                    try:
+                        traj_data = json.loads(line)
+
+                        # 验证
+                        is_valid, errors = self.validate_trajectory(traj_data)
+                        if not is_valid:
+                            result.failed_count += 1
+                            result.errors.append(f"Line {line_num}: {', '.join(errors)}")
+                            continue
+
+                        # 检查重复
+                        traj_id = traj_data.get("trajectory_id")
+                        if self.repository.get(traj_id):
+                            result.skipped_count += 1
+                            continue
+
+                        # 创建并保存
+                        trajectory = Trajectory(**traj_data)
+                        trajectory.source = "jsonl_import"
+                        trajectory.created_at = time.time()
+                        trajectory.updated_at = time.time()
+
+                        self.repository.add(trajectory)
+                        result.imported_count += 1
+                        total_count += 1
+
+                        # 每100条更新一次进度
+                        if total_count % 100 == 0:
+                            result.progress = min(90, total_count // 10)
+
+                    except json.JSONDecodeError as e:
+                        result.failed_count += 1
+                        result.errors.append(f"Line {line_num}: Invalid JSON - {str(e)}")
+                    except Exception as e:
+                        result.failed_count += 1
+                        result.errors.append(f"Line {line_num}: {str(e)}")
+
+            result.progress = 100
+            result.success = result.imported_count > 0 or result.skipped_count > 0
+            result.status = "completed"
+            result.completed_at = time.time()
+            result.message = f"Imported {result.imported_count} trajectories from JSONL"
+
+            # 记录历史
+            self._add_history(task_id, str(path.name), result)
+
+        except Exception as e:
+            result.success = False
+            result.errors.append(f"JSONL import failed: {str(e)}")
+            result.status = "failed"
+
+        return result
+
     async def get_import_status(self, task_id: str) -> Optional[ImportResult]:
         """获取导入任务状态"""
         return _import_tasks.get(task_id)
@@ -224,6 +370,26 @@ class ImportService:
     async def get_import_history(self, limit: int = 50) -> List[ImportHistory]:
         """获取导入历史"""
         return sorted(_import_history, key=lambda x: x.created_at, reverse=True)[:limit]
+
+    def get_allowed_directories(self) -> List[str]:
+        """获取允许导入的目录列表"""
+        return [str(d) for d in self.allowed_directories]
+
+    def add_allowed_directory(self, dir_path: str) -> tuple[bool, str]:
+        """添加允许导入的目录"""
+        try:
+            path = Path(dir_path).expanduser().resolve()
+            if not path.exists():
+                return False, f"Directory does not exist: {dir_path}"
+            if not path.is_dir():
+                return False, f"Not a directory: {dir_path}"
+
+            if path not in self.allowed_directories:
+                self.allowed_directories.append(path)
+
+            return True, f"Added allowed directory: {dir_path}"
+        except Exception as e:
+            return False, f"Failed to add directory: {str(e)}"
 
     def _add_history(self, task_id: str, file_name: str, result: ImportResult):
         """添加导入历史记录"""

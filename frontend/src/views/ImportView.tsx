@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
@@ -39,11 +39,32 @@ interface TemplateExample {
 
 export default function ImportView() {
   const [file, setFile] = useState<File | null>(null);
+  const [filePath, setFilePath] = useState('');
+  const [importMethod, setImportMethod] = useState<'upload' | 'path'>('path');
+  const [fileType, setFileType] = useState<'json' | 'jsonl'>('json');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
+  const [allowedDirectories, setAllowedDirectories] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 加载允许的目录
+  const loadAllowedDirectories = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/import/allowed-directories`);
+      if (res.ok) {
+        const data = await res.json();
+        setAllowedDirectories(data.directories || []);
+      }
+    } catch (error) {
+      console.error('Failed to load allowed directories:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadAllowedDirectories();
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -62,13 +83,13 @@ export default function ImportView() {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type === "application/json" || droppedFile.name.endsWith('.json')) {
+      if (droppedFile.type === "application/json" || droppedFile.name.endsWith('.json') || droppedFile.name.endsWith('.jsonl')) {
         setFile(droppedFile);
         setResult(null);
       } else {
         setResult({
           success: false,
-          message: "请上传 JSON 格式的文件",
+          message: "请上传 JSON 或 JSONL 格式的文件",
           error: "Invalid file format"
         });
       }
@@ -82,7 +103,7 @@ export default function ImportView() {
     }
   };
 
-  const handleImport = async () => {
+  const handleUploadImport = async () => {
     if (!file) return;
 
     setImporting(true);
@@ -111,6 +132,53 @@ export default function ImportView() {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+      } else {
+        setResult({
+          success: false,
+          message: data.detail || "导入失败",
+          error: data.detail
+        });
+      }
+    } catch (error) {
+      setResult({
+        success: false,
+        message: "网络错误，请检查后端服务",
+        error: String(error)
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handlePathImport = async () => {
+    if (!filePath.trim()) return;
+
+    setImporting(true);
+    setResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/import/from-path`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_path: filePath,
+          file_type: fileType,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setResult({
+          success: true,
+          message: data.message || "导入成功",
+          trajectory_id: data.trajectory_id,
+          task_id: data.task_id,
+          status: data.status
+        });
+        setFilePath('');
       } else {
         setResult({
           success: false,
@@ -196,6 +264,32 @@ export default function ImportView() {
           </button>
         </div>
 
+        {/* Import Method Selector */}
+        <div className="flex gap-4 mb-4">
+          <button
+            onClick={() => setImportMethod('path')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+              importMethod === 'path'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <FolderOpen size={18} className="inline mr-2" />
+            本地文件路径（推荐）
+          </button>
+          <button
+            onClick={() => setImportMethod('upload')}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+              importMethod === 'upload'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <Upload size={18} className="inline mr-2" />
+            上传文件
+          </button>
+        </div>
+
         {/* Format Reference */}
         {showTemplate && (
           <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
@@ -245,95 +339,188 @@ export default function ImportView() {
         )}
       </div>
 
-      {/* Upload Area */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <div
-          className={`relative border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
-            dragActive
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-slate-300 hover:border-slate-400'
-          }`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            onChange={handleFileChange}
-            className="hidden"
-            id="file-upload"
-          />
-          <label htmlFor="file-upload" className="cursor-pointer">
-            <div className="flex flex-col items-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
-                dragActive ? 'bg-blue-100' : 'bg-slate-100'
-              }`}>
-                <Upload className={`w-8 h-8 ${dragActive ? 'text-blue-600' : 'text-slate-600'}`} />
-              </div>
-              <p className="text-lg font-medium text-slate-900 mb-2">
-                {file ? file.name : "拖拽文件到此处或点击上传"}
-              </p>
-              <p className="text-sm text-slate-500">
-                支持 JSON 格式，最大 10MB
-              </p>
-            </div>
-          </label>
-        </div>
+      {/* Path-based Import (Recommended) */}
+      {importMethod === 'path' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            本地文件路径导入
+          </h3>
 
-        {/* File Info & Actions */}
-        {file && (
-          <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-slate-900">{file.name}</p>
-                  <p className="text-sm text-slate-500">{(file.size / 1024).toFixed(2)} KB</p>
-                </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              文件路径
+            </label>
+            <input
+              type="text"
+              value={filePath}
+              onChange={(e) => setFilePath(e.target.value)}
+              placeholder="/home/user/Downloads/trajectories.json"
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="mt-2 text-sm text-slate-600">
+              允许的目录：{allowedDirectories.length > 0 ? allowedDirectories.join(', ') : '加载中...'}
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              文件类型
+            </label>
+            <select
+              value={fileType}
+              onChange={(e) => setFileType(e.target.value as 'json' | 'jsonl')}
+              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="json">JSON (标准格式)</option>
+              <option value="jsonl">JSONL (每行一条，适合大文件)</option>
+            </select>
+            <p className="mt-2 text-sm text-slate-600">
+              {fileType === 'json' ? '标准 JSON 数组或对象格式' : 'JSONL 格式：每行一个独立的 JSON 对象，推荐用于超大文件'}
+            </p>
+          </div>
+
+          <button
+            onClick={handlePathImport}
+            disabled={!filePath.trim() || importing}
+            className={`w-full py-2.5 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2 ${
+              importing || !filePath.trim()
+                ? 'bg-slate-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
+          >
+            {importing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                导入中...
+              </>
+            ) : (
+              <>
+                <FolderOpen className="w-4 h-4" />
+                从路径导入
+              </>
+            )}
+          </button>
+
+          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-green-900">
+                <p className="font-medium mb-1">优势</p>
+                <ul className="space-y-1 text-green-700">
+                  <li>✓ 无需网络传输</li>
+                  <li>✓ 无需创建临时文件</li>
+                  <li>✓ 直接读取原始文件</li>
+                  <li>✓ 适合超大文件（几GB）</li>
+                </ul>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload-based Import */}
+      {importMethod === 'upload' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div
+            className={`relative border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+              dragActive
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-slate-300 hover:border-slate-400'
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,.jsonl,application/json"
+              onChange={handleFileChange}
+              className="hidden"
+              id="file-upload"
+            />
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <div className="flex flex-col items-center">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
+                  dragActive ? 'bg-blue-100' : 'bg-slate-100'
+                }`}>
+                  <Upload className={`w-8 h-8 ${dragActive ? 'text-blue-600' : 'text-slate-600'}`} />
+                </div>
+                <p className="text-lg font-medium text-slate-900 mb-2">
+                  {file ? file.name : "拖拽文件到此处或点击上传"}
+                </p>
+                <p className="text-sm text-slate-500">
+                  支持 JSON/JSONL 格式，最大 10GB
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* File Info & Actions */}
+          {file && (
+            <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-900">{file.name}</p>
+                    <p className="text-sm text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setFile(null);
+                    setResult(null);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }}
+                  className="text-sm text-slate-600 hover:text-red-600 transition-colors"
+                >
+                  移除
+                </button>
+              </div>
+
               <button
-                onClick={() => {
-                  setFile(null);
-                  setResult(null);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                  }
-                }}
-                className="text-sm text-slate-600 hover:text-red-600 transition-colors"
+                onClick={handleUploadImport}
+                disabled={importing}
+                className={`mt-4 w-full py-2.5 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2 ${
+                  importing
+                    ? 'bg-slate-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                移除
+                {importing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    导入中...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    开始上传
+                  </>
+                )}
               </button>
             </div>
+          )}
 
-            <button
-              onClick={handleImport}
-              disabled={importing}
-              className={`mt-4 w-full py-2.5 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2 ${
-                importing
-                  ? 'bg-slate-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-            >
-              {importing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  导入中...
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4" />
-                  开始导入
-                </>
-              )}
-            </button>
+          <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+            <div className="flex gap-3">
+              <Info className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-yellow-900">
+                <p className="font-medium mb-1">注意</p>
+                <p className="text-yellow-700">
+                  上传方式会创建临时文件并进行网络传输，对于大文件建议使用"本地文件路径"方式。
+                </p>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Import Result */}
       {result && (
@@ -386,8 +573,10 @@ export default function ImportView() {
             <p className="font-medium mb-1">提示</p>
             <ul className="space-y-1 text-blue-700">
               <li>• 支持单文件导入和批量导入（JSONL 格式）</li>
+              <li>• 推荐 JSONL 格式用于超大文件（每行一个 JSON 对象）</li>
+              <li>• 本地路径导入无需拷贝文件，直接读取</li>
               <li>• 导入后可在 <strong>Trajectories</strong> 页面查看数据</li>
-              <li>• 重复的 trajectory_id 会被更新而不是覆盖</li>
+              <li>• 重复的 trajectory_id 会被跳过</li>
               <li>• steps_json 可以是空数组，但至少要有基本信息</li>
             </ul>
           </div>

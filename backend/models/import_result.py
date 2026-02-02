@@ -17,6 +17,7 @@ class ImportResult(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     status: str = "completed"  # pending, processing, completed, failed
     progress: int = 0  # 0-100
+    message: Optional[str] = None  # 可选的消息字段
     created_at: float = Field(default_factory=time.time)
     completed_at: Optional[float] = None
 

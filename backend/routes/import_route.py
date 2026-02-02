@@ -1,8 +1,9 @@
 """
 导入相关API路由
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Body
 from typing import Dict, Any
+from pydantic import BaseModel
 
 from backend.models.import_result import ImportResult
 from backend.services.import_service import ImportService
@@ -15,33 +16,76 @@ router = APIRouter(prefix="/api/import", tags=["import"])
 service = ImportService(get_db_path(), create_default_vector_func())
 
 
+class FilePathRequest(BaseModel):
+    """文件路径请求模型"""
+    file_path: str
+    file_type: str = "json"  # json 或 jsonl
+
+
 @router.post("/json", response_model=Dict[str, Any], status_code=202)
 async def import_json_file(file: UploadFile = File(...)):
-    """导入JSON文件"""
-    # 保存上传的文件
+    """导入JSON文件 - 支持大文件上传（流式处理）
+
+    注意：此方式会将文件上传到服务器，会产生网络传输和临时文件
+    推荐使用 POST /api/import/from-path 直接指定本地文件路径
+    """
     import tempfile
     import os
+    import shutil
+
+    temp_file_path = None
 
     try:
         # 创建临时文件
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_file:
-            content = await file.read()
-            temp_file.write(content)
             temp_file_path = temp_file.name
+            # 使用流式写入，支持大文件
+            shutil.copyfileobj(file.file, temp_file)
 
         # 执行导入
         result = await service.import_from_json(temp_file_path)
 
         # 删除临时文件
-        os.unlink(temp_file_path)
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
 
         return result.model_dump()
 
     except Exception as e:
         # 清理临时文件
-        if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+        if temp_file_path and os.path.exists(temp_file_path):
             os.unlink(temp_file_path)
 
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/from-path", response_model=Dict[str, Any])
+async def import_from_path(request: FilePathRequest):
+    """从本地文件路径导入轨迹（无需上传，直接读取）
+
+    优点：
+    - 无需网络传输
+    - 无需创建临时文件
+    - 直接读取原始文件
+    - 适合大文件导入
+
+    安全性：
+    - 只能访问允许的目录（默认：~/Downloads, ~/Documents, ~/Desktop, /tmp）
+    - 可通过 API 添加更多允许的目录
+
+    支持格式：
+    - JSON: 标准JSON数组或对象
+    - JSONL: 每行一个JSON对象（推荐用于大文件）
+    """
+    try:
+        if request.file_type == "jsonl":
+            result = await service.import_from_jsonl(request.file_path)
+        else:
+            result = await service.import_from_json(request.file_path)
+
+        return result.model_dump()
+
+    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -75,3 +119,32 @@ async def get_import_history(limit: int = Query(50, ge=1, le=200)):
         "data": [h.model_dump() for h in history],
         "total": len(history)
     }
+
+
+@router.get("/allowed-directories", response_model=Dict[str, Any])
+async def get_allowed_directories():
+    """获取允许导入的目录列表"""
+    dirs = service.get_allowed_directories()
+    return {
+        "directories": dirs,
+        "total": len(dirs)
+    }
+
+
+@router.post("/add-directory", response_model=Dict[str, Any])
+async def add_allowed_directory(directory: str = Body(..., embed=True)):
+    """添加允许导入的目录
+
+    例如：POST /api/import/add-directory
+    Body: {"directory": "/home/user/data"}
+    """
+    success, message = service.add_allowed_directory(directory)
+    if success:
+        dirs = service.get_allowed_directories()
+        return {
+            "success": True,
+            "message": message,
+            "directories": dirs
+        }
+    else:
+        raise HTTPException(status_code=400, detail=message)
