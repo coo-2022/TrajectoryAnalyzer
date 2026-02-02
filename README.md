@@ -70,8 +70,23 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # 或 venv\Scripts\activate  # Windows
 
-# 安装依赖
+# 安装核心依赖（推荐）
+pip install -r requirements-core.txt
+
+# 或安装完整依赖（包含测试和代码质量工具）
 pip install -r requirements.txt
+```
+
+**依赖说明**：
+- `requirements-core.txt` - 只包含运行所需的核心依赖（约50MB）
+- `requirements.txt` - 包含测试和开发工具（约200MB）
+
+### 1.1 国内镜像加速（可选）
+
+如果下载速度慢，可以使用国内镜像：
+
+```bash
+pip install -r requirements-core.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 ### 2. 运行演示

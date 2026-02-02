@@ -444,6 +444,47 @@ with open('trajectories.jsonl', 'r') as f:
 
 ---
 
+## 安装
+
+### 1. 创建虚拟环境
+
+```bash
+cd /home/coo/code/demo/trajectory_store
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# 或 .venv\Scripts\activate  # Windows
+```
+
+### 2. 安装依赖
+
+**推荐：只安装核心依赖（轻量，约50MB）**
+```bash
+pip install -r requirements-core.txt
+```
+
+**完整：包含测试和开发工具（约200MB）**
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 国内镜像加速（可选）
+
+```bash
+pip install -r requirements-core.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+### 依赖说明
+
+| 文件 | 大小 | 包含内容 | 适用场景 |
+|------|------|---------|---------|
+| `requirements-core.txt` | ~50MB | 核心运行依赖 | 生产环境、快速部署 |
+| `requirements.txt` | ~200MB | +测试工具+代码质量工具 | 开发环境、需要测试 |
+
+**已移除的依赖**：
+- ❌ `sentence-transformers` - 不再需要，系统使用简单的hash向量模拟
+
+---
+
 ## 启动命令
 
 ### 后端
