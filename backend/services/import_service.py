@@ -10,6 +10,7 @@ from backend.models.trajectory import Trajectory
 from backend.models.import_result import ImportResult, ImportHistory
 from backend.repositories.trajectory import TrajectoryRepository, create_default_vector_func
 from backend.config import settings, get_db_path
+from backend.services.logger_service import logger
 
 
 # 内存中存储导入任务状态
@@ -365,23 +366,40 @@ class ImportService:
         )
         _import_tasks[task_id] = result
 
+        # 记录开始日志
+        logger.info(task_id, f"开始导入JSONL文件: {file_path}")
+
         try:
             # 验证路径
+            logger.info(task_id, "验证文件路径...", file_path=file_path)
             is_allowed, error_msg = self.is_path_allowed(file_path)
             if not is_allowed:
+                logger.error(task_id, "文件路径验证失败", error=error_msg)
                 result.success = False
                 result.errors.append(error_msg)
                 result.status = "failed"
                 return result
 
             path = Path(file_path).expanduser().resolve()
+            logger.info(task_id, "文件路径验证通过", path=str(path))
+
+            # 获取文件大小
+            file_size = path.stat().st_size
+            logger.info(task_id, "文件信息", size=file_size, size_mb=f"{file_size / 1024 / 1024:.2f} MB")
 
             # 流式读取，逐行处理
             total_count = 0
+            line_count = 0
+            start_time = time.time()
+
+            logger.info(task_id, "开始解析文件内容...")
+
             with open(path, 'r', encoding='utf-8') as f:
                 for line_num, line in enumerate(f, 1):
                     if not line.strip():  # 跳过空行
                         continue
+
+                    line_count += 1
 
                     try:
                         line_data = json.loads(line)
@@ -390,8 +408,10 @@ class ImportService:
                         if isinstance(line_data, dict) and "trajectories" in line_data:
                             trajectories = line_data["trajectories"]
                             if not isinstance(trajectories, list):
+                                error_msg = f"Line {line_num}: 'trajectories' must be a list"
+                                logger.error(task_id, "数据格式错误", line=line_num, error=error_msg)
                                 result.failed_count += len(trajectories) if isinstance(trajectories, list) else 1
-                                result.errors.append(f"Line {line_num}: 'trajectories' must be a list")
+                                result.errors.append(error_msg)
                                 continue
 
                             # 处理数组中的每个轨迹
@@ -403,13 +423,16 @@ class ImportService:
                                     # 验证
                                     is_valid, errors = self.validate_trajectory(traj_data)
                                     if not is_valid:
+                                        error_msg = f"Line {line_num}[{traj_idx}]: {', '.join(errors)}"
+                                        logger.warning(task_id, "轨迹验证失败", line=line_num, index=traj_idx, errors=errors)
                                         result.failed_count += 1
-                                        result.errors.append(f"Line {line_num}[{traj_idx}]: {', '.join(errors)}")
+                                        result.errors.append(error_msg)
                                         continue
 
                                     # 检查重复
                                     traj_id = traj_data.get("trajectory_id")
                                     if self.repository.get(traj_id):
+                                        logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num, index=traj_idx)
                                         result.skipped_count += 1
                                         continue
 
@@ -423,9 +446,14 @@ class ImportService:
                                     result.imported_count += 1
                                     total_count += 1
 
+                                    if total_count % 10 == 0:
+                                        logger.debug(task_id, "导入进度", imported=total_count, line=line_num)
+
                                 except Exception as e:
+                                    error_msg = f"Line {line_num}[{traj_idx}]: {str(e)}"
+                                    logger.error(task_id, "导入轨迹失败", line=line_num, index=traj_idx, error=str(e))
                                     result.failed_count += 1
-                                    result.errors.append(f"Line {line_num}[{traj_idx}]: {str(e)}")
+                                    result.errors.append(error_msg)
                         else:
                             # 格式1：每行一个轨迹对象
                             traj_data = line_data
@@ -436,13 +464,16 @@ class ImportService:
                             # 验证
                             is_valid, errors = self.validate_trajectory(traj_data)
                             if not is_valid:
+                                error_msg = f"Line {line_num}: {', '.join(errors)}"
+                                logger.warning(task_id, "轨迹验证失败", line=line_num, errors=errors)
                                 result.failed_count += 1
-                                result.errors.append(f"Line {line_num}: {', '.join(errors)}")
+                                result.errors.append(error_msg)
                                 continue
 
                             # 检查重复
                             traj_id = traj_data.get("trajectory_id")
                             if self.repository.get(traj_id):
+                                logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num)
                                 result.skipped_count += 1
                                 continue
 
@@ -456,16 +487,25 @@ class ImportService:
                             result.imported_count += 1
                             total_count += 1
 
-                        # 每100条更新一次进度
-                        if total_count % 100 == 0:
+                        # 每100条或每10行更新一次进度
+                        if total_count % 100 == 0 or line_count % 10 == 0:
                             result.progress = min(90, total_count // 10)
+                            logger.info(task_id, "导入进度更新",
+                                      imported=total_count,
+                                      skipped=result.skipped_count,
+                                      failed=result.failed_count,
+                                      progress=result.progress)
 
                     except json.JSONDecodeError as e:
+                        error_msg = f"Line {line_num}: Invalid JSON - {str(e)}"
+                        logger.error(task_id, "JSON解析失败", line=line_num, error=str(e))
                         result.failed_count += 1
-                        result.errors.append(f"Line {line_num}: Invalid JSON - {str(e)}")
+                        result.errors.append(error_msg)
                     except Exception as e:
+                        error_msg = f"Line {line_num}: {str(e)}"
+                        logger.error(task_id, "处理行失败", line=line_num, error=str(e))
                         result.failed_count += 1
-                        result.errors.append(f"Line {line_num}: {str(e)}")
+                        result.errors.append(error_msg)
 
             result.progress = 100
             result.success = result.imported_count > 0 or result.skipped_count > 0
@@ -473,10 +513,19 @@ class ImportService:
             result.completed_at = time.time()
             result.message = f"Imported {result.imported_count} trajectories from JSONL"
 
+            elapsed_time = time.time() - start_time
+            logger.info(task_id, "导入完成",
+                        imported=result.imported_count,
+                        skipped=result.skipped_count,
+                        failed=result.failed_count,
+                        elapsed_time=f"{elapsed_time:.2f}s",
+                        lines_processed=line_count)
+
             # 记录历史
             self._add_history(task_id, str(path.name), result)
 
         except Exception as e:
+            logger.error(task_id, "导入失败", error=str(e))
             result.success = False
             result.errors.append(f"JSONL import failed: {str(e)}")
             result.status = "failed"

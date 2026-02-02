@@ -2,11 +2,12 @@
 导入相关API路由
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Body
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from backend.models.import_result import ImportResult
 from backend.services.import_service import ImportService
+from backend.services.logger_service import logger
 from backend.repositories.trajectory import create_default_vector_func
 from backend.config import get_db_path
 
@@ -148,3 +149,50 @@ async def add_allowed_directory(directory: str = Body(..., embed=True)):
         }
     else:
         raise HTTPException(status_code=400, detail=message)
+
+
+@router.get("/logs/{task_id}", response_model=Dict[str, Any])
+async def get_import_logs(task_id: str, level: Optional[str] = Query(None)):
+    """获取指定导入任务的日志
+
+    参数:
+    - task_id: 导入任务ID
+    - level: 日志级别过滤 (info, warning, error)，可选
+    """
+    try:
+        logs = logger.get_task_logs(task_id)
+
+        # 按级别过滤
+        if level:
+            logs = [log for log in logs if log["level"] == level]
+
+        return {
+            "task_id": task_id,
+            "logs": logs,
+            "total": len(logs)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/logs", response_model=Dict[str, Any])
+async def get_all_logs(limit: int = Query(100, ge=1, le=1000), level: Optional[str] = Query(None)):
+    """获取所有导入日志
+
+    参数:
+    - limit: 返回的日志条数限制 (默认100，最大1000)
+    - level: 日志级别过滤 (info, warning, error)，可选
+    """
+    try:
+        logs = logger.get_logs(limit=limit)
+
+        # 按级别过滤
+        if level:
+            logs = [log for log in logs if log["level"] == level]
+
+        return {
+            "logs": logs,
+            "total": len(logs)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

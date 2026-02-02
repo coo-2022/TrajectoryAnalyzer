@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen } from 'lucide-react';
+import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen, ChevronDown, ChevronUp } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
@@ -10,6 +10,21 @@ interface ImportResult {
   task_id?: string;
   status?: string;
   error?: string;
+  progress?: number;
+  imported_count?: number;
+  failed_count?: number;
+  skipped_count?: number;
+  warnings?: string[];
+  errors?: string[];
+}
+
+interface ImportLog {
+  timestamp: number;
+  datetime: string;
+  level: 'info' | 'warning' | 'error';
+  message: string;
+  task_id: string;
+  details: Record<string, any>;
 }
 
 interface TemplateExample {
@@ -47,6 +62,9 @@ export default function ImportView() {
   const [dragActive, setDragActive] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [allowedDirectories, setAllowedDirectories] = useState<string[]>([]);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<ImportLog[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 加载允许的目录
@@ -65,6 +83,51 @@ export default function ImportView() {
   useEffect(() => {
     loadAllowedDirectories();
   }, []);
+
+  // Fetch logs for a specific task
+  const fetchLogs = async (taskId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/import/logs/${taskId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.logs || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch logs:', error);
+    }
+  };
+
+  // Poll for import status updates
+  useEffect(() => {
+    if (!currentTaskId || !importing) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const statusRes = await fetch(`${API_BASE}/import/status/${currentTaskId}`);
+        if (statusRes.ok) {
+          const data = await statusRes.json();
+          setResult(data);
+
+          // Fetch logs periodically
+          if (data.status === 'processing' || data.status === 'completed') {
+            fetchLogs(currentTaskId);
+          }
+
+          // Stop polling if import is complete or failed
+          if (data.status === 'completed' || data.status === 'failed') {
+            setImporting(false);
+            clearInterval(interval);
+            // Final log fetch
+            fetchLogs(currentTaskId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to poll status:', error);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentTaskId, importing]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -108,6 +171,8 @@ export default function ImportView() {
 
     setImporting(true);
     setResult(null);
+    setLogs([]);
+    setShowLogs(true);
 
     try {
       const formData = new FormData();
@@ -121,12 +186,14 @@ export default function ImportView() {
       const data = await response.json();
 
       if (response.ok) {
+        setCurrentTaskId(data.task_id || null);
         setResult({
           success: true,
-          message: data.message || "导入成功",
+          message: data.message || "导入中...",
           trajectory_id: data.trajectory_id,
           task_id: data.task_id,
-          status: data.status
+          status: data.status || 'processing',
+          progress: data.progress || 0
         });
         setFile(null);
         if (fileInputRef.current) {
@@ -138,6 +205,7 @@ export default function ImportView() {
           message: data.detail || "导入失败",
           error: data.detail
         });
+        setImporting(false);
       }
     } catch (error) {
       setResult({
@@ -145,7 +213,6 @@ export default function ImportView() {
         message: "网络错误，请检查后端服务",
         error: String(error)
       });
-    } finally {
       setImporting(false);
     }
   };
@@ -155,6 +222,8 @@ export default function ImportView() {
 
     setImporting(true);
     setResult(null);
+    setLogs([]);
+    setShowLogs(true);
 
     try {
       const response = await fetch(`${API_BASE}/import/from-path`, {
@@ -171,12 +240,14 @@ export default function ImportView() {
       const data = await response.json();
 
       if (response.ok) {
+        setCurrentTaskId(data.task_id || null);
         setResult({
           success: true,
-          message: data.message || "导入成功",
+          message: data.message || "导入中...",
           trajectory_id: data.trajectory_id,
           task_id: data.task_id,
-          status: data.status
+          status: data.status || 'processing',
+          progress: data.progress || 0
         });
         setFilePath('');
       } else {
@@ -185,6 +256,7 @@ export default function ImportView() {
           message: data.detail || "导入失败",
           error: data.detail
         });
+        setImporting(false);
       }
     } catch (error) {
       setResult({
@@ -192,7 +264,6 @@ export default function ImportView() {
         message: "网络错误，请检查后端服务",
         error: String(error)
       });
-    } finally {
       setImporting(false);
     }
   };
@@ -550,6 +621,63 @@ export default function ImportView() {
               }`}>
                 {result.message}
               </p>
+
+              {/* Progress Bar */}
+              {result.status === 'processing' && result.progress !== undefined && (
+                <div className="mb-3">
+                  <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
+                    <span>导入进度</span>
+                    <span>{result.progress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${result.progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Statistics */}
+              {(result.imported_count !== undefined || result.failed_count !== undefined || result.skipped_count !== undefined) && (
+                <div className="flex gap-4 mb-2 text-xs">
+                  {result.imported_count !== undefined && (
+                    <span className="text-green-700 font-medium">
+                      ✓ 成功: {result.imported_count}
+                    </span>
+                  )}
+                  {result.failed_count !== undefined && result.failed_count > 0 && (
+                    <span className="text-red-700 font-medium">
+                      ✗ 失败: {result.failed_count}
+                    </span>
+                  )}
+                  {result.skipped_count !== undefined && result.skipped_count > 0 && (
+                    <span className="text-yellow-700 font-medium">
+                      ⊘ 跳过: {result.skipped_count} (重复)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Warnings */}
+              {result.warnings && result.warnings.length > 0 && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                  <p className="text-xs font-medium text-yellow-800 mb-1">
+                    警告 ({result.warnings.length}):
+                  </p>
+                  <ul className="text-xs text-yellow-700 space-y-0.5">
+                    {result.warnings.slice(0, 5).map((warning, idx) => (
+                      <li key={idx} className="truncate">• {warning}</li>
+                    ))}
+                    {result.warnings.length > 5 && (
+                      <li className="text-yellow-600 italic">
+                        ... 还有 {result.warnings.length - 5} 条警告
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
               {result.trajectory_id && (
                 <p className="text-xs text-green-600 font-mono">
                   轨迹ID: {result.trajectory_id}
@@ -561,6 +689,48 @@ export default function ImportView() {
                 </p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Logs */}
+      {showLogs && logs.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-slate-900">导入日志</h3>
+            <button
+              onClick={() => setShowLogs(false)}
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              关闭
+            </button>
+          </div>
+
+          <div className="bg-slate-900 rounded-lg p-4 max-h-96 overflow-y-auto">
+            {logs.map((log, idx) => (
+              <div key={idx} className="mb-2 last:mb-0">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs text-slate-400 font-mono whitespace-nowrap">
+                    {log.datetime}
+                  </span>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                    log.level === 'error'
+                      ? 'bg-red-900 text-red-300'
+                      : log.level === 'warning'
+                      ? 'bg-yellow-900 text-yellow-300'
+                      : 'bg-blue-900 text-blue-300'
+                  }`}>
+                    {log.level.toUpperCase()}
+                  </span>
+                  <span className="text-sm text-slate-200">{log.message}</span>
+                </div>
+                {Object.keys(log.details).length > 0 && (
+                  <div className="ml-6 mt-1 text-xs text-slate-400 font-mono">
+                    {JSON.stringify(log.details, null, 2)}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
