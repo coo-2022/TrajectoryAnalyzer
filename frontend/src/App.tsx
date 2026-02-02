@@ -252,8 +252,12 @@ const DashboardView = ({ onNavigate }) => {
 // --- Page 2: Trajectory List View ---
 // 表格列定义
 const TABLE_COLUMNS = [
-  { id: 'trajectory_id', label: 'Trajectory ID', filterType: 'text', sortable: true, width: 'w-40' },
+  { id: 'training_id', label: 'Training ID', filterType: 'text', sortable: true, width: 'w-40' },
+  { id: 'epoch_id', label: 'Epoch', filterType: 'number', sortable: true, width: 'w-20' },
+  { id: 'iteration_id', label: 'Iteration', filterType: 'number', sortable: true, width: 'w-24' },
+  { id: 'sample_id', label: 'Sample', filterType: 'number', sortable: true, width: 'w-20' },
   { id: 'questionId', label: 'Question ID', filterType: 'text', sortable: true, width: 'w-40' },
+  { id: 'trajectory_id', label: 'Trajectory ID', filterType: 'text', sortable: true, width: 'w-40' },
   { id: 'task.question', label: 'Question', filterType: 'text', sortable: false, width: 'w-auto' },
   { id: 'isSuccess', label: 'Result', filterType: 'options', options: ['Success', 'Failed'], sortable: true, width: 'w-24' },
   { id: 'termination_reason', label: 'Termination Reason', filterType: 'options', options: ['success', 'failed'], sortable: true, width: 'w-36' },
@@ -262,10 +266,6 @@ const TABLE_COLUMNS = [
   { id: 'exec_time', label: 'Time', filterType: 'number', sortable: true, width: 'w-24' },
   { id: 'agent_name', label: 'Agent', filterType: 'text', sortable: true, width: 'w-32' },
   { id: 'reward', label: 'Reward', filterType: 'number', sortable: true, width: 'w-24' },
-  { id: 'epoch_id', label: 'Epoch', filterType: 'number', sortable: true, width: 'w-20' },
-  { id: 'iteration_id', label: 'Iteration', filterType: 'number', sortable: true, width: 'w-24' },
-  { id: 'sample_id', label: 'Sample', filterType: 'number', sortable: true, width: 'w-20' },
-  { id: 'training_id', label: 'Training ID', filterType: 'text', sortable: true, width: 'w-40' },
 ];
 
 const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
@@ -948,10 +948,14 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                  <tr><td colSpan="14" className="p-10 text-center text-slate-500">Initializing...</td></tr>
               ) : (state.trajectories || []).map((t) => (
                 <tr key={t.trajectory_id} onClick={() => onSelectTrajectory(t.trajectory_id)} className="hover:bg-blue-50 cursor-pointer transition-colors group">
+                  <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">{t.training_id || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.epoch_id ?? '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.iteration_id ?? '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.sample_id ?? '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">{t.questionId || t.data_id}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500 group-hover:text-blue-600 font-medium">
                     {t.trajectory_id}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">{t.questionId || t.data_id}</td>
                   <td className="px-6 py-4 text-sm text-slate-800"><div className="max-w-md truncate">{t.task?.question || t.question}</div></td>
                   <td className="px-6 py-4 whitespace-nowrap"><ResultBadge success={t.isSuccess} /></td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
@@ -974,10 +978,6 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
                     <span className="border border-slate-100 rounded bg-slate-50 px-2 py-0.5">{t.agent_name || "-"}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.reward !== undefined ? t.reward.toFixed(1) : '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.epoch_id ?? '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.iteration_id ?? '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">{t.sample_id ?? '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">{t.training_id || '-'}</td>
                 </tr>
               ))}
 

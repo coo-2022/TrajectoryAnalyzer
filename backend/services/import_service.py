@@ -347,9 +347,14 @@ class ImportService:
     async def import_from_jsonl(self, file_path: str) -> ImportResult:
         """从JSONL文件导入轨迹（流式处理，适合超大文件）
 
-        JSONL格式：每行一个独立的JSON对象
-        {"trajectory_id": "1", ...}
-        {"trajectory_id": "2", ...}
+        支持两种JSONL格式：
+        1. 每行一个独立的JSON对象
+           {"trajectory_id": "1", ...}
+           {"trajectory_id": "2", ...}
+
+        2. 每行包含trajectories数组的JSON对象
+           {"iteration": "0", "trajectories": [...]}
+           {"iteration": "1", "trajectories": [...]}
         """
         task_id = f"import_{int(time.time())}"
         result = ImportResult(
@@ -379,33 +384,77 @@ class ImportService:
                         continue
 
                     try:
-                        traj_data = json.loads(line)
+                        line_data = json.loads(line)
 
-                        # 标准化数据
-                        traj_data = self._normalize_trajectory_data(traj_data)
+                        # 判断格式：如果包含"trajectories"字段，则遍历数组
+                        if isinstance(line_data, dict) and "trajectories" in line_data:
+                            trajectories = line_data["trajectories"]
+                            if not isinstance(trajectories, list):
+                                result.failed_count += len(trajectories) if isinstance(trajectories, list) else 1
+                                result.errors.append(f"Line {line_num}: 'trajectories' must be a list")
+                                continue
 
-                        # 验证
-                        is_valid, errors = self.validate_trajectory(traj_data)
-                        if not is_valid:
-                            result.failed_count += 1
-                            result.errors.append(f"Line {line_num}: {', '.join(errors)}")
-                            continue
+                            # 处理数组中的每个轨迹
+                            for traj_idx, traj_data in enumerate(trajectories):
+                                try:
+                                    # 标准化数据
+                                    traj_data = self._normalize_trajectory_data(traj_data)
 
-                        # 检查重复
-                        traj_id = traj_data.get("trajectory_id")
-                        if self.repository.get(traj_id):
-                            result.skipped_count += 1
-                            continue
+                                    # 验证
+                                    is_valid, errors = self.validate_trajectory(traj_data)
+                                    if not is_valid:
+                                        result.failed_count += 1
+                                        result.errors.append(f"Line {line_num}[{traj_idx}]: {', '.join(errors)}")
+                                        continue
 
-                        # 创建并保存
-                        trajectory = Trajectory(**traj_data)
-                        trajectory.source = "jsonl_import"
-                        trajectory.created_at = time.time()
-                        trajectory.updated_at = time.time()
+                                    # 检查重复
+                                    traj_id = traj_data.get("trajectory_id")
+                                    if self.repository.get(traj_id):
+                                        result.skipped_count += 1
+                                        continue
 
-                        self.repository.add(trajectory)
-                        result.imported_count += 1
-                        total_count += 1
+                                    # 创建并保存
+                                    trajectory = Trajectory(**traj_data)
+                                    trajectory.source = "jsonl_import"
+                                    trajectory.created_at = time.time()
+                                    trajectory.updated_at = time.time()
+
+                                    self.repository.add(trajectory)
+                                    result.imported_count += 1
+                                    total_count += 1
+
+                                except Exception as e:
+                                    result.failed_count += 1
+                                    result.errors.append(f"Line {line_num}[{traj_idx}]: {str(e)}")
+                        else:
+                            # 格式1：每行一个轨迹对象
+                            traj_data = line_data
+
+                            # 标准化数据
+                            traj_data = self._normalize_trajectory_data(traj_data)
+
+                            # 验证
+                            is_valid, errors = self.validate_trajectory(traj_data)
+                            if not is_valid:
+                                result.failed_count += 1
+                                result.errors.append(f"Line {line_num}: {', '.join(errors)}")
+                                continue
+
+                            # 检查重复
+                            traj_id = traj_data.get("trajectory_id")
+                            if self.repository.get(traj_id):
+                                result.skipped_count += 1
+                                continue
+
+                            # 创建并保存
+                            trajectory = Trajectory(**traj_data)
+                            trajectory.source = "jsonl_import"
+                            trajectory.created_at = time.time()
+                            trajectory.updated_at = time.time()
+
+                            self.repository.add(trajectory)
+                            result.imported_count += 1
+                            total_count += 1
 
                         # 每100条更新一次进度
                         if total_count % 100 == 0:

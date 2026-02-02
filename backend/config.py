@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # 导入配置
     max_import_size: int = 100 * 1024 * 1024  # 100MB
     import_chunk_size: int = 100
+    allowed_import_directories: List[str] = [
+        "/home/coo/code/demo/trajectory_store/data"
+    ]
 
     # 分析配置
     max_turn_limit: int = 8
