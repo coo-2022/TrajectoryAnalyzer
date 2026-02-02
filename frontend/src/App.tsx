@@ -23,9 +23,11 @@ import {
   ListFilter,
   Loader2,
   ExternalLink,
-  X
+  X,
+  Upload
 } from 'lucide-react';
 import AnalysisView from './views/AnalysisView';
+import ImportView from './views/ImportView';
 
 // ==========================================
 // 1. API Backend (Real Data)
@@ -1219,6 +1221,7 @@ export default function App() {
             />
         );
       case "analysis": return <AnalysisView />;
+      case "import": return <ImportView />;
       default: return <DashboardView />;
     }
   };
@@ -1251,6 +1254,7 @@ export default function App() {
           <NavItem id="dashboard" label="Overview" icon={LayoutDashboard} />
           <NavItem id="trajectories" label="Trajectories" icon={FileText} />
           <NavItem id="analysis" label="Analysis" icon={AlertOctagon} />
+          <NavItem id="import" label="Import Data" icon={Upload} />
         </nav>
       </aside>
 
@@ -1262,6 +1266,7 @@ export default function App() {
                 {activeTab === 'dashboard' && 'Analytics Overview'}
                 {activeTab === 'trajectories' && 'Trajectory List'}
                 {activeTab === 'analysis' && 'Trajectory Analysis'}
+                {activeTab === 'import' && 'Import Trajectory Data'}
               </h1>
             </div>
           )}
