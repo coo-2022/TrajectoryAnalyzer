@@ -1156,12 +1156,12 @@ const TrajectoryDetailView = ({ trajectoryId, onBack }) => {
           <h3 className="font-semibold text-slate-800">Execution Flow (Chat History)</h3>
         </div>
         <div className="p-6 bg-slate-50/50 min-h-[400px]">
-          {data.steps && data.steps.length > 0 ? (
-            data.steps.map((step, idx) => renderStep(step, idx))
-          ) : data.chat_completions && data.chat_completions.length > 0 ? (
+          {data.chat_completions && data.chat_completions.length > 0 ? (
             data.chat_completions.map((msg, idx) => renderMessage(msg, idx))
+          ) : data.steps && data.steps.length > 0 ? (
+            data.steps.map((step, idx) => renderStep(step, idx))
           ) : (
-            <div className="text-center text-slate-400 py-10">No execution steps found</div>
+            <div className="text-center text-slate-400 py-10">No execution data found</div>
           )}
         </div>
       </div>

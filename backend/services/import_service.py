@@ -115,6 +115,26 @@ class ImportService:
         """标准化轨迹数据，处理格式差异"""
         normalized = traj_data.copy()
 
+        # 0. 修复 trajectory_id：确保包含 tree_id
+        if "trajectory_id" in normalized and "tree_id" in normalized:
+            traj_id = normalized["trajectory_id"]
+            tree_id = str(normalized["tree_id"])
+
+            # 检查 trajectory_id 是否已包含 tree_id（最后一段应该是 tree_id）
+            parts = traj_id.split("-")
+            if len(parts) >= 6:
+                # 如果最后一部分不等于 tree_id，说明 ID 缺少 tree_id
+                if parts[-1] != tree_id:
+                    # 重新生成 trajectory_id，包含 tree_id
+                    # 格式: {data_id}-{training_id}-{epoch_id}-{iteration_id}-{sample_id}-{tree_id}
+                    data_id = normalized.get("data_id", "")
+                    training_id = normalized.get("training_id", "")
+                    epoch_id = normalized.get("epoch_id", "")
+                    iteration_id = normalized.get("iteration_id", "")
+                    sample_id = normalized.get("sample_id", "")
+
+                    normalized["trajectory_id"] = f"{data_id}-{training_id}-{epoch_id}-{iteration_id}-{sample_id}-{tree_id}"
+
         # 1. 处理缺失的必需字段
         if "task" not in normalized:
             # 从 chat_completions 中提取问题
