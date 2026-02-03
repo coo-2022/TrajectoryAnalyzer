@@ -21,6 +21,9 @@ _import_history: List[ImportHistory] = []
 class ImportService:
     """JSON导入服务"""
 
+    # 批量插入配置
+    BATCH_SIZE = 500  # 每批处理500条记录
+
     def __init__(self, db_uri: Optional[str] = None, vector_func=None):
         self.db_uri = db_uri or get_db_path()
         self.vector_func = vector_func or create_default_vector_func()
@@ -392,6 +395,10 @@ class ImportService:
             line_count = 0
             start_time = time.time()
 
+            # 批量插入优化
+            batch = []
+            batch_start_time = time.time()
+
             logger.info(task_id, "开始解析文件内容...")
 
             with open(path, 'r', encoding='utf-8') as f:
@@ -436,18 +443,33 @@ class ImportService:
                                         result.skipped_count += 1
                                         continue
 
-                                    # 创建并保存
+                                    # 创建轨迹对象（不立即插入）
                                     trajectory = Trajectory(**traj_data)
                                     trajectory.source = "jsonl_import"
                                     trajectory.created_at = time.time()
                                     trajectory.updated_at = time.time()
 
-                                    self.repository.add(trajectory)
-                                    result.imported_count += 1
-                                    total_count += 1
+                                    # 添加到批量
+                                    batch.append(trajectory)
 
-                                    if total_count % 10 == 0:
-                                        logger.debug(task_id, "导入进度", imported=total_count, line=line_num)
+                                    # 批量插入
+                                    if len(batch) >= self.BATCH_SIZE:
+                                        self.repository.add_batch(batch)
+                                        result.imported_count += len(batch)
+                                        total_count += len(batch)
+
+                                        # 批量插入性能日志
+                                        batch_time = time.time() - batch_start_time
+                                        logger.info(task_id, "批量插入完成",
+                                                  batch_size=len(batch),
+                                                  elapsed=f"{batch_time:.2f}s",
+                                                  throughput=f"{len(batch)/batch_time:.1f}条/秒")
+
+                                        batch = []
+                                        batch_start_time = time.time()
+
+                                    if total_count % 1000 == 0:
+                                        logger.info(task_id, "导入进度", imported=total_count, line=line_num)
 
                                 except Exception as e:
                                     error_msg = f"Line {line_num}[{traj_idx}]: {str(e)}"
@@ -477,15 +499,30 @@ class ImportService:
                                 result.skipped_count += 1
                                 continue
 
-                            # 创建并保存
+                            # 创建轨迹对象（不立即插入）
                             trajectory = Trajectory(**traj_data)
                             trajectory.source = "jsonl_import"
                             trajectory.created_at = time.time()
                             trajectory.updated_at = time.time()
 
-                            self.repository.add(trajectory)
-                            result.imported_count += 1
-                            total_count += 1
+                            # 添加到批量
+                            batch.append(trajectory)
+
+                            # 批量插入
+                            if len(batch) >= self.BATCH_SIZE:
+                                self.repository.add_batch(batch)
+                                result.imported_count += len(batch)
+                                total_count += len(batch)
+
+                                # 批量插入性能日志
+                                batch_time = time.time() - batch_start_time
+                                logger.info(task_id, "批量插入完成",
+                                          batch_size=len(batch),
+                                          elapsed=f"{batch_time:.2f}s",
+                                          throughput=f"{len(batch)/batch_time:.1f}条/秒")
+
+                                batch = []
+                                batch_start_time = time.time()
 
                         # 每100条或每10行更新一次进度
                         if total_count % 100 == 0 or line_count % 10 == 0:
@@ -506,6 +543,19 @@ class ImportService:
                         logger.error(task_id, "处理行失败", line=line_num, error=str(e))
                         result.failed_count += 1
                         result.errors.append(error_msg)
+
+            # 插入剩余记录
+            if batch:
+                self.repository.add_batch(batch)
+                result.imported_count += len(batch)
+                total_count += len(batch)
+
+                # 批量插入性能日志
+                batch_time = time.time() - batch_start_time
+                logger.info(task_id, "批量插入完成(最后一批)",
+                          batch_size=len(batch),
+                          elapsed=f"{batch_time:.2f}s",
+                          throughput=f"{len(batch)/batch_time:.1f}条/秒")
 
             result.progress = 100
             result.success = result.imported_count > 0 or result.skipped_count > 0
