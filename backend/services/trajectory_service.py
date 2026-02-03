@@ -58,17 +58,22 @@ class TrajectoryService:
         offset = (page - 1) * page_size
 
         if filters:
-            # 使用筛选条件（带更多数据以支持分页）
+            # 使用筛选条件，只获取当前页需要的数据
+            # 为了准确计算total，需要获取所有匹配数据
+            # 这里暂时获取 page * page_size 条数据以支持前面的分页
             trajectories = self.repository.filter(
                 filters or {},
-                limit=page_size * 10,  # 获取更多数据以支持分页
+                limit=page * page_size,  # 只获取到当前页为止的数据
                 sort_params=sort_params
             )
             total = len(trajectories)
             data = trajectories[offset:offset + page_size]
         else:
-            # 获取所有数据（带排序）
-            all_trajectories = self.repository.get_all(limit=10000, sort_params=sort_params)
+            # 获取数据（带排序），只获取需要的数量
+            all_trajectories = self.repository.get_all(
+                limit=page * page_size,  # 只获取到当前页为止的数据
+                sort_params=sort_params
+            )
             total = len(all_trajectories)
             data = all_trajectories[offset:offset + page_size]
 

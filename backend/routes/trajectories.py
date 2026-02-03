@@ -18,7 +18,7 @@ service = TrajectoryService(get_db_path(), create_default_vector_func())
 @router.get("", response_model=Dict[str, Any])
 async def list_trajectories(
     page: int = Query(1, ge=1),
-    pageSize: int = Query(20, ge=1, le=100),
+    pageSize: int = Query(20, ge=1, le=1000),  # 修改最大值到1000
     # 筛选参数
     trajectory_id: Optional[str] = None,
     data_id: Optional[str] = None,
