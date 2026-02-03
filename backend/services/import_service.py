@@ -348,7 +348,7 @@ class ImportService:
 
         return result
 
-    async def import_from_jsonl(self, file_path: str) -> ImportResult:
+    async def import_from_jsonl(self, file_path: str, skip_duplicate_check: bool = False) -> ImportResult:
         """从JSONL文件导入轨迹（流式处理，适合超大文件）
 
         支持两种JSONL格式：
@@ -389,6 +389,15 @@ class ImportService:
             # 获取文件大小
             file_size = path.stat().st_size
             logger.info(task_id, "文件信息", size=file_size, size_mb=f"{file_size / 1024 / 1024:.2f} MB")
+
+            # 批量去重优化：一次性加载所有已存在的ID
+            existing_ids = set()
+            if not skip_duplicate_check:
+                logger.info(task_id, "加载现有轨迹ID用于去重检查...")
+                existing_ids = self.repository.get_all_existing_ids()
+                logger.info(task_id, "已加载现有轨迹ID", count=len(existing_ids))
+            else:
+                logger.info(task_id, "跳过去重检查（skip_duplicate_check=True）")
 
             # 流式读取，逐行处理
             total_count = 0
@@ -438,7 +447,7 @@ class ImportService:
 
                                     # 检查重复
                                     traj_id = traj_data.get("trajectory_id")
-                                    if self.repository.get(traj_id):
+                                    if not skip_duplicate_check and traj_id in existing_ids:
                                         logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num, index=traj_idx)
                                         result.skipped_count += 1
                                         continue
@@ -494,7 +503,7 @@ class ImportService:
 
                             # 检查重复
                             traj_id = traj_data.get("trajectory_id")
-                            if self.repository.get(traj_id):
+                            if not skip_duplicate_check and traj_id in existing_ids:
                                 logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num)
                                 result.skipped_count += 1
                                 continue

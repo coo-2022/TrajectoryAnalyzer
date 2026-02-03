@@ -354,6 +354,20 @@ class TrajectoryRepository:
         results = self.tbl.search(question_vector).limit(limit).to_pydantic(DbTrajectory)
         return [r.to_domain() for r in results]
 
+    def get_all_existing_ids(self) -> set:
+        """获取所有已存在的trajectory_id
+
+        Returns:
+            包含所有trajectory_id的集合
+        """
+        # 使用轻量级查询，只获取ID列
+        try:
+            df = self.tbl.search().select(["trajectory_id"]).to_pandas()
+            return set(df["trajectory_id"].tolist())
+        except Exception:
+            # 如果查询失败（如表为空），返回空集合
+            return set()
+
     def filter(self, filters: Dict[str, Any], limit: int = 100, sort_params: Dict[str, str] = None) -> List[Trajectory]:
         """根据条件筛选轨迹
 
