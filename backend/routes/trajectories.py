@@ -125,32 +125,35 @@ async def list_trajectories(
 
     result = await service.list(page, pageSize, filters if filters else None, sort_params)
 
-    # Get analysis data
-    analysis_df = service.repository.get_analysis_df()
+    # 优化：批量获取当前页的analysis数据，避免全表扫描
+    trajectory_ids = [t.trajectory_id for t in result.data]
+
+    # 批量获取analysis数据（一次性查询）
+    analysis_map = {}
+    if trajectory_ids:
+        analysis_df = service.repository.get_analysis_by_ids(trajectory_ids)
+        if not analysis_df.empty:
+            for _, row in analysis_df.iterrows():
+                analysis_map[row['trajectory_id']] = {
+                    'isSuccess': bool(row['is_success']),
+                    'category': row['category'],
+                    'rootCause': row['root_cause']
+                }
 
     # Build response with analysis data
     data_list = []
     for t in result.data:
         traj_dict = t.model_dump()
 
-        # Add analysis data if available
-        if not analysis_df.empty:
-            analysis_row = analysis_df[analysis_df['trajectory_id'] == t.trajectory_id]
-            if not analysis_row.empty:
-                traj_dict['isSuccess'] = bool(analysis_row.iloc[0]['is_success'])
-                traj_dict['category'] = analysis_row.iloc[0]['category']
-                traj_dict['rootCause'] = analysis_row.iloc[0]['root_cause']
-                traj_dict['step_count'] = len(t.steps)
-            else:
-                traj_dict['isSuccess'] = t.reward > 0
-                traj_dict['category'] = ""
-                traj_dict['rootCause'] = ""
-                traj_dict['step_count'] = len(t.steps)
+        # 使用预加载的analysis数据（避免逐条查找）
+        if t.trajectory_id in analysis_map:
+            traj_dict.update(analysis_map[t.trajectory_id])
         else:
             traj_dict['isSuccess'] = t.reward > 0
             traj_dict['category'] = ""
             traj_dict['rootCause'] = ""
-            traj_dict['step_count'] = len(t.steps)
+
+        traj_dict['step_count'] = len(t.steps)
 
         # Add questionId field for frontend
         traj_dict['questionId'] = t.data_id

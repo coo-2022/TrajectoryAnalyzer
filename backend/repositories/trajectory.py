@@ -287,6 +287,25 @@ class TrajectoryRepository:
         """获取分析结果DataFrame"""
         return self.analysis_tbl.search().limit(limit).to_pandas()
 
+    def get_analysis_by_ids(self, trajectory_ids: List[str]) -> pd.DataFrame:
+        """根据ID列表批量获取分析结果
+
+        Args:
+            trajectory_ids: 轨迹ID列表
+
+        Returns:
+            包含分析结果的DataFrame
+        """
+        if not trajectory_ids:
+            return pd.DataFrame()
+
+        # 构建IN查询
+        ids_str = ", ".join([f"'{tid}'" for tid in trajectory_ids])
+        where_clause = f"trajectory_id IN ({ids_str})"
+
+        df = self.analysis_tbl.search().where(where_clause).to_pandas()
+        return df
+
     def fetch_unanalyzed(self, limit: int = 100) -> List[Trajectory]:
         """获取未分析的轨迹"""
         results = self.tbl.search().where("is_analyzed IS NULL OR is_analyzed = false").limit(limit).to_pydantic(DbTrajectory)
