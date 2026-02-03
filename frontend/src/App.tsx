@@ -1305,7 +1305,15 @@ export default function App() {
                 setState={setTrajectoryViewState}
             />
         );
-      case "analysis": return <AnalysisView />;
+      case "analysis":
+        // Analysis 页面暂时隐藏，显示提示
+        return (
+          <div className="flex flex-col items-center justify-center min-h-[400px]">
+            <AlertOctagon size={48} className="text-slate-300 mb-4" />
+            <h2 className="text-xl font-semibold text-slate-700 mb-2">Analysis Page</h2>
+            <p className="text-slate-500">此功能正在开发中，敬请期待...</p>
+          </div>
+        );
       case "import": return <ImportView />;
       default: return <DashboardView />;
     }
@@ -1332,6 +1340,14 @@ export default function App() {
     </button>
   );
 
+  // 可用的导航项（暂时隐藏 Analysis）
+  const NAV_ITEMS = [
+    { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+    { id: "trajectories", label: "Trajectories", icon: FileText },
+    // { id: "analysis", label: "Analysis", icon: AlertOctagon },  // 暂时隐藏
+    { id: "import", label: "Import Data", icon: Upload },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       <aside className="w-64 bg-white border-r border-slate-200 fixed h-full hidden md:block z-10">
@@ -1340,21 +1356,24 @@ export default function App() {
           <span className="font-bold text-lg text-slate-800">Trajectory<span className="text-blue-600">.AI</span></span>
         </div>
         <nav className="mt-6 space-y-1">
-          <NavItem id="dashboard" label="Overview" icon={LayoutDashboard} />
-          <NavItem id="trajectories" label="Trajectories" icon={FileText} />
-          <NavItem id="analysis" label="Analysis" icon={AlertOctagon} />
-          <NavItem id="import" label="Import Data" icon={Upload} />
+          {NAV_ITEMS.map((item) => (
+            <NavItem
+              key={item.id}
+              id={item.id}
+              label={item.label}
+              icon={item.icon}
+            />
+          ))}
         </nav>
       </aside>
 
       <main className="flex-1 md:ml-64 p-4 md:p-8 overflow-y-auto">
         <div className="w-full">
-          {!selectedTrajectoryId && (
+          {!selectedTrajectoryId && activeTab !== 'analysis' && (
             <div className="mb-8">
               <h1 className="text-2xl font-bold text-slate-900">
                 {activeTab === 'dashboard' && 'Analytics Overview'}
                 {activeTab === 'trajectories' && 'Trajectory List'}
-                {activeTab === 'analysis' && 'Trajectory Analysis'}
                 {activeTab === 'import' && 'Import Trajectory Data'}
               </h1>
             </div>
