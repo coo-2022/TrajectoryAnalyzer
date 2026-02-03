@@ -273,6 +273,184 @@ class TrajectoryRepository:
 
         return results
 
+    def get_paginated(
+        self,
+        offset: int,
+        limit: int,
+        filters: Dict[str, Any] = None,
+        sort_params: Dict[str, str] = None
+    ) -> List[Trajectory]:
+        """使用LanceDB原生查询和分页
+
+        Args:
+            offset: 偏移量
+            limit: 返回数量
+            filters: 筛选条件
+            sort_params: 排序参数 {"field": "field_name", "order": "asc"/"desc"}
+
+        Returns:
+            轨迹列表
+        """
+        query = self.tbl.search()
+
+        # 添加筛选条件
+        if filters:
+            where_clauses = self._build_where_clauses(filters)
+            if where_clauses:
+                where_clause = " AND ".join(where_clauses)
+                query = query.where(where_clause)
+
+        # 注意：LanceDB的query对象没有.sort()方法
+        # 排序在pandas DataFrame上应用（当前代码的做法）
+        # 或者可以使用DuckDB进行真正的ORDER BY
+        # Sort applied in pandas after query (current approach)
+
+        # 应用分页（数据库层）
+        query = query.offset(offset).limit(limit)
+
+        # 转换结果
+        df = query.to_pandas()
+
+        # 应用排序（pandas侧 - LanceDB不支持.sort()方法）
+        if sort_params and sort_params.get("field"):
+            field = sort_params["field"]
+            order = sort_params.get("order", "desc")
+            ascending = (order == "asc")
+            # 确保字段存在
+            if field in df.columns:
+                df = df.sort_values(by=field, ascending=ascending)
+
+        results = []
+        for _, row in df.iterrows():
+            row_dict = row.to_dict()
+            db_traj = DbTrajectory(**row_dict)
+            results.append(db_traj.to_domain())
+
+        return results
+
+    def count(self, filters: Dict[str, Any] = None) -> int:
+        """获取匹配条件的记录数
+
+        Args:
+            filters: 筛选条件
+
+        Returns:
+            匹配的记录总数
+        """
+        query = self.tbl.search()
+
+        if filters:
+            where_clauses = self._build_where_clauses(filters)
+            if where_clauses:
+                where_clause = " AND ".join(where_clauses)
+                query = query.where(where_clause)
+
+        # LanceDB支持COUNT - 通过to_pandas获取长度
+        df = query.to_pandas()
+        return len(df)
+
+    def _build_where_clauses(self, filters: Dict[str, Any]) -> List[str]:
+        """构建WHERE子句（复用filter方法的逻辑）
+
+        Args:
+            filters: 筛选条件字典
+
+        Returns:
+            WHERE子句列表
+        """
+        clauses = []
+
+        # 精确匹配字段
+        exact_match_fields = ["data_id", "agent_name", "training_id"]
+        for field in exact_match_fields:
+            if field in filters and filters[field]:
+                value = filters[field]
+                # 支持LIKE部分匹配
+                if isinstance(value, str) and '*' in value:
+                    # SQL输入清洗：转义单引号
+                    safe_value = value.replace("'", "''").replace('*', '%')
+                    clauses.append(f"{field} LIKE '{safe_value}'")
+                else:
+                    # SQL输入清洗：转义单引号
+                    safe_value = str(value).replace("'", "''")
+                    clauses.append(f"{field} = '{safe_value}'")
+
+        # 模糊匹配字段（带SQL输入清洗）
+        if "trajectory_id" in filters and filters["trajectory_id"]:
+            # 转义单引号以防止SQL注入
+            safe_value = filters["trajectory_id"].replace("'", "''")
+            clauses.append(f"trajectory_id LIKE '%{safe_value}%'")
+
+        if "question" in filters and filters["question"]:
+            # 转义单引号以防止SQL注入
+            safe_value = filters["question"].replace("'", "''")
+            clauses.append(f"task.question LIKE '%{safe_value}%'")
+
+        # 终止原因枚举（需要验证输入为有效值）
+        if "termination_reason" in filters and filters["termination_reason"]:
+            reasons = filters["termination_reason"].split(",")
+            # 验证并转义每个原因值
+            safe_reasons = []
+            valid_reasons = ["success", "error", "timeout", "max_iterations", "user_cancelled"]
+            for r in reasons:
+                r = r.strip()
+                r = r.replace("'", "''")  # 转义单引号
+                if r in valid_reasons:
+                    safe_reasons.append(f"'{r}'")
+            if safe_reasons:
+                reasons_str = ", ".join(safe_reasons)
+                clauses.append(f"termination_reason IN ({reasons_str})")
+
+        # Reward字段：支持范围和精确匹配（数值类型，无需转义）
+        if "reward_exact" in filters and filters["reward_exact"] is not None:
+            clauses.append(f"reward = {float(filters['reward_exact'])}")
+        else:
+            if "reward_min" in filters and filters["reward_min"] is not None:
+                clauses.append(f"reward >= {float(filters['reward_min'])}")
+            if "reward_max" in filters and filters["reward_max"] is not None:
+                clauses.append(f"reward <= {float(filters['reward_max'])}")
+
+        # Toolcall Reward字段（数值类型，无需转义）
+        if "toolcall_reward_exact" in filters and filters["toolcall_reward_exact"] is not None:
+            clauses.append(f"toolcall_reward = {float(filters['toolcall_reward_exact'])}")
+        else:
+            if "toolcall_reward_min" in filters and filters["toolcall_reward_min"] is not None:
+                clauses.append(f"toolcall_reward >= {float(filters['toolcall_reward_min'])}")
+            if "toolcall_reward_max" in filters and filters["toolcall_reward_max"] is not None:
+                clauses.append(f"toolcall_reward <= {float(filters['toolcall_reward_max'])}")
+
+        # Res Reward字段（数值类型，无需转义）
+        if "res_reward_exact" in filters and filters["res_reward_exact"] is not None:
+            clauses.append(f"res_reward = {float(filters['res_reward_exact'])}")
+        else:
+            if "res_reward_min" in filters and filters["res_reward_min"] is not None:
+                clauses.append(f"res_reward >= {float(filters['res_reward_min'])}")
+            if "res_reward_max" in filters and filters["res_reward_max"] is not None:
+                clauses.append(f"res_reward <= {float(filters['res_reward_max'])}")
+
+        # ID字段（整数类型，无需转义）
+        for field in ["epoch_id", "iteration_id", "sample_id"]:
+            if field in filters and filters[field] is not None:
+                clauses.append(f"{field} = {int(filters[field])}")
+
+        # 布尔字段（布尔类型，无需转义）
+        if "is_bookmarked" in filters and filters["is_bookmarked"] is not None:
+            clauses.append(f"is_bookmarked = {bool(filters['is_bookmarked'])}")
+
+        # Step count字段（整数类型，无需转义）
+        if "step_count_min" in filters and filters["step_count_min"] is not None:
+            clauses.append(f"step_count >= {int(filters['step_count_min'])}")
+        if "step_count_max" in filters and filters["step_count_max"] is not None:
+            clauses.append(f"step_count <= {int(filters['step_count_max'])}")
+
+        # Execution time字段（浮点类型，无需转义）
+        if "exec_time_min" in filters and filters["exec_time_min"] is not None:
+            clauses.append(f"exec_time >= {float(filters['exec_time_min'])}")
+        if "exec_time_max" in filters and filters["exec_time_max"] is not None:
+            clauses.append(f"exec_time <= {float(filters['exec_time_max'])}")
+
+        return clauses
+
     def get_lightweight_df(self, limit: int = 100000) -> pd.DataFrame:
         """获取轻量级DataFrame（不含大字段）"""
         cols = [
