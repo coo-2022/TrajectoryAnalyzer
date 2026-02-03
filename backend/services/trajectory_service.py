@@ -1,8 +1,10 @@
 """
 Trajectory业务服务
 """
+import hashlib
+import json
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel
 
 from backend.models.trajectory import Trajectory, TrajectoryListResponse, TrajectoryFilter
@@ -27,6 +29,104 @@ class TrajectoryService:
         self.vector_func = vector_func or create_default_vector_func()
         self.repository = TrajectoryRepository(self.db_uri, self.vector_func)
 
+        # 缓存配置
+        self.cache_enabled = True
+        self.cache_ttl = 300  # 5分钟缓存
+        self.cache_max_size = 1000  # 最大缓存条目数
+        self._cache: Dict[str, Tuple[Any, float]] = {}  # {cache_key: (data, expire_time)}
+        self._stats_cache: Optional[Tuple[AnalysisStatistics, float]] = None
+        self._stats_cache_ttl = 60  # 统计数据缓存60秒
+
+    def _make_cache_key(
+        self,
+        page: int,
+        page_size: int,
+        filters: Optional[Dict[str, Any]] = None,
+        sort_params: Optional[Dict[str, str]] = None
+    ) -> str:
+        """生成缓存键
+
+        Args:
+            page: 页码
+            page_size: 每页大小
+            filters: 筛选条件
+            sort_params: 排序参数
+
+        Returns:
+            MD5哈希缓存键
+        """
+        cache_data = {
+            "page": page,
+            "page_size": page_size,
+            "filters": self._normalize_filters_for_cache(filters),
+            "sort_params": sort_params
+        }
+        cache_str = json.dumps(cache_data, sort_keys=True, default=str)
+        return hashlib.md5(cache_str.encode()).hexdigest()
+
+    def _normalize_filters_for_cache(self, filters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """规范化筛选条件用于缓存（处理None值）
+
+        Args:
+            filters: 原始筛选条件
+
+        Returns:
+            规范化后的筛选条件
+        """
+        if not filters:
+            return {}
+
+        # 移除None值，确保相同条件生成相同键
+        return {k: v for k, v in filters.items() if v is not None}
+
+    def _get_from_cache(self, cache_key: str) -> Optional[Any]:
+        """从缓存获取数据
+
+        Args:
+            cache_key: 缓存键
+
+        Returns:
+            缓存的数据，如果不存在或已过期返回None
+        """
+        if not self.cache_enabled:
+            return None
+
+        if cache_key in self._cache:
+            data, expire_time = self._cache[cache_key]
+            if time.time() < expire_time:
+                return data
+            else:
+                # 缓存过期，删除
+                del self._cache[cache_key]
+
+        return None
+
+    def _set_cache(self, cache_key: str, data: Any) -> None:
+        """设置缓存
+
+        Args:
+            cache_key: 缓存键
+            data: 要缓存的数据
+        """
+        if not self.cache_enabled:
+            return
+
+        # 如果缓存已满，删除最旧的条目
+        if len(self._cache) >= self.cache_max_size:
+            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
+            del self._cache[oldest_key]
+
+        expire_time = time.time() + self.cache_ttl
+        self._cache[cache_key] = (data, expire_time)
+
+    def invalidate_cache(self) -> None:
+        """清除所有缓存"""
+        self._cache.clear()
+
+    def invalidate_cache_on_change(self) -> None:
+        """数据变更时清除缓存（供外部调用）"""
+        self.invalidate_cache()
+
     async def create(self, trajectory_data: Dict[str, Any]) -> Trajectory:
         """创建轨迹"""
         trajectory = Trajectory(**trajectory_data)
@@ -34,6 +134,7 @@ class TrajectoryService:
         trajectory.updated_at = time.time()
 
         self.repository.add(trajectory)
+        self.invalidate_cache()  # 清除缓存
         return trajectory
 
     async def get(self, trajectory_id: str) -> Optional[Trajectory]:
@@ -47,7 +148,7 @@ class TrajectoryService:
         filters: Optional[Dict[str, Any]] = None,
         sort_params: Optional[Dict[str, str]] = None
     ) -> PaginatedResult:
-        """获取轨迹列表
+        """获取轨迹列表（带缓存）
 
         Args:
             page: 页码
@@ -55,34 +156,38 @@ class TrajectoryService:
             filters: 筛选条件
             sort_params: 排序参数 {"field": "field_name", "order": "asc"/"desc"}
         """
+        # 检查缓存
+        cache_key = self._make_cache_key(page, page_size, filters, sort_params)
+        cached_result = self._get_from_cache(cache_key)
+
+        if cached_result is not None:
+            return cached_result
+
+        # 缓存未命中，执行查询
         offset = (page - 1) * page_size
 
-        if filters:
-            # 使用筛选条件，只获取当前页需要的数据
-            # 为了准确计算total，需要获取所有匹配数据
-            # 这里暂时获取 page * page_size 条数据以支持前面的分页
-            trajectories = self.repository.filter(
-                filters or {},
-                limit=page * page_size,  # 只获取到当前页为止的数据
-                sort_params=sort_params
-            )
-            total = len(trajectories)
-            data = trajectories[offset:offset + page_size]
-        else:
-            # 获取数据（带排序），只获取需要的数量
-            all_trajectories = self.repository.get_all(
-                limit=page * page_size,  # 只获取到当前页为止的数据
-                sort_params=sort_params
-            )
-            total = len(all_trajectories)
-            data = all_trajectories[offset:offset + page_size]
+        # 使用新的原生查询方法
+        data = self.repository.get_paginated(
+            offset=offset,
+            limit=page_size,
+            filters=filters,
+            sort_params=sort_params
+        )
 
-        return PaginatedResult(
+        # 使用新的count方法获取总数
+        total = self.repository.count(filters=filters)
+
+        result = PaginatedResult(
             data=data,
             total=total,
             page=page,
             page_size=page_size
         )
+
+        # 存入缓存
+        self._set_cache(cache_key, result)
+
+        return result
 
     async def update(self, trajectory_id: str, updates: Dict[str, Any]) -> Optional[Trajectory]:
         """更新轨迹"""
@@ -99,6 +204,7 @@ class TrajectoryService:
         # 删除旧的，添加新的
         self.repository.delete(trajectory_id)
         self.repository.add(trajectory)
+        self.invalidate_cache()  # 清除缓存
 
         return trajectory
 
@@ -106,6 +212,7 @@ class TrajectoryService:
         """删除轨迹"""
         try:
             self.repository.delete(trajectory_id)
+            self.invalidate_cache()  # 清除缓存
             return True
         except Exception:
             return False
@@ -133,7 +240,14 @@ class TrajectoryService:
         return self.repository.search_similar(vector, limit)
 
     async def get_statistics(self) -> AnalysisStatistics:
-        """获取统计信息"""
+        """获取统计信息（带缓存）"""
+        # 检查缓存
+        if self._stats_cache is not None:
+            stats, expire_time = self._stats_cache
+            if time.time() < expire_time:
+                return stats
+
+        # 缓存未命中，计算统计信息
         df = self.repository.get_lightweight_df()
         analysis_df = self.repository.get_analysis_df()
 
@@ -159,7 +273,7 @@ class TrajectoryService:
         avg_reward = float(df['reward'].mean()) if 'reward' in df.columns else 0.0
         avg_exec_time = float(df['exec_time'].mean()) if 'exec_time' in df.columns else 0.0
 
-        return AnalysisStatistics(
+        stats = AnalysisStatistics(
             total_count=total_count,
             success_count=success_count,
             failure_count=failure_count,
@@ -168,6 +282,11 @@ class TrajectoryService:
             avg_reward=avg_reward,
             avg_exec_time=avg_exec_time
         )
+
+        # 存入缓存
+        self._stats_cache = (stats, time.time() + self._stats_cache_ttl)
+
+        return stats
 
     async def add_tag(self, trajectory_id: str, tag: str) -> bool:
         """添加标签"""
