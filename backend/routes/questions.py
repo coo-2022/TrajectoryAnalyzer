@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Query
 from typing import Dict, Any, List, Optional
 import pandas as pd
+import time
 
 from backend.repositories.trajectory import create_default_vector_func
 from backend.config import get_db_path
@@ -14,13 +15,40 @@ router = APIRouter(prefix="/api/questions", tags=["questions"])
 from backend.repositories.trajectory import TrajectoryRepository
 _repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
 
+# ==========================================
+# 缓存配置
+# ==========================================
+_questions_cache = {
+    "data": None,
+    "expire_time": 0
+}
+_QUESTIONS_CACHE_TTL = 60  # 60秒缓存
+
 
 @router.get("", response_model=Dict[str, Any])
 async def list_questions(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100)
 ):
-    """获取问题列表"""
+    """获取问题列表（带缓存）"""
+    # 检查缓存
+    current_time = time.time()
+    if _questions_cache["data"] is not None and current_time < _questions_cache["expire_time"]:
+        # 缓存命中，直接分页返回
+        question_stats = _questions_cache["data"]
+        total = len(question_stats)
+        start = (page - 1) * pageSize
+        end = start + pageSize
+        data = question_stats[start:end]
+
+        return {
+            "data": data,
+            "total": total,
+            "page": page,
+            "pageSize": pageSize
+        }
+
+    # 缓存未命中，重新计算
     # 获取所有轨迹数据
     df = _repository.get_lightweight_df()
 
@@ -75,6 +103,10 @@ async def list_questions(
 
     # 按data_id排序
     question_stats.sort(key=lambda x: x['id'])
+
+    # 存入缓存
+    _questions_cache["data"] = question_stats
+    _questions_cache["expire_time"] = current_time + _QUESTIONS_CACHE_TTL
 
     # 分页
     total = len(question_stats)
