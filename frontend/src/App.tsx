@@ -145,14 +145,68 @@ const ResultBadge = ({ success }) => (
 
 const Pagination = ({ current, total, pageSize, onChange }) => {
   const totalPages = Math.ceil(total / pageSize);
+  const [inputValue, setInputValue] = useState('');
+  const [error, setError] = useState('');
+
   if (total === 0) return null;
+
+  const handleJump = () => {
+    const page = parseInt(inputValue);
+    if (isNaN(page) || page < 1 || page > totalPages) {
+      setError(`请输入 1-${totalPages} 之间的页码`);
+      return;
+    }
+    setError('');
+    setInputValue('');
+    onChange(page);
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleJump();
+    }
+  };
+
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-slate-200">
-      <div className="flex space-x-2">
+      <div className="flex items-center gap-2">
         <button onClick={() => onChange(Math.max(1, current - 1))} disabled={current === 1} className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-slate-50">Prev</button>
         <button onClick={() => onChange(Math.min(totalPages, current + 1))} disabled={current === totalPages} className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-slate-50">Next</button>
       </div>
-      <span className="text-sm text-slate-500">{current} / {totalPages}</span>
+
+      <div className="flex items-center gap-3 text-sm">
+        <span className="text-slate-500">{current} / {totalPages} 页</span>
+        <span className="text-slate-300">|</span>
+        <span className="text-slate-500">共 <span className="font-medium text-slate-700">{total.toLocaleString()}</span> 条</span>
+
+        {/* 跳转输入框 */}
+        <div className="flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
+          <span className="text-slate-500">跳转</span>
+          <input
+            type="number"
+            min="1"
+            max={totalPages}
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              setError('');
+            }}
+            onKeyPress={handleKeyPress}
+            placeholder={`1-${totalPages}`}
+            className={`w-20 px-2 py-1 border rounded text-sm text-center ${
+              error ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-slate-300 focus:border-blue-500 focus:ring-blue-200'
+            } focus:outline-none focus:ring-2`}
+          />
+          <button
+            onClick={handleJump}
+            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+            disabled={!inputValue}
+          >
+            GO
+          </button>
+          {error && <span className="text-xs text-red-500 whitespace-nowrap">{error}</span>}
+        </div>
+      </div>
     </div>
   );
 };
@@ -272,9 +326,9 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
   const [loading, setLoading] = useState(false);
   const filterTimeoutRef = useRef(null);
 
-  // 列筛选状态
-  const [columnFilters, setColumnFilters] = useState(
-    TABLE_COLUMNS.reduce((acc, col) => ({
+  // 列筛选状态 - 当state.isLoaded为false时重置
+  const [columnFilters, setColumnFilters] = useState(() => {
+    return TABLE_COLUMNS.reduce((acc, col) => ({
       ...acc,
       [col.id]: {
         field: col.id,
@@ -284,12 +338,32 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
         selected: [],
         conditions: {},
       }
-    }), {})
-  );
+    }), {});
+  });
 
-  // 排序状态
+  // 排序状态 - 当state.isLoaded为false时重置
   const [sortField, setSortField] = useState(null);
   const [sortOrder, setSortOrder] = useState('desc');
+
+  // 当state被重置时，也重置筛选和排序状态
+  useEffect(() => {
+    if (!state.isLoaded) {
+      const resetFilters = TABLE_COLUMNS.reduce((acc, col) => ({
+        ...acc,
+        [col.id]: {
+          field: col.id,
+          type: col.filterType,
+          active: false,
+          value: '',
+          selected: [],
+          conditions: {},
+        }
+      }), {});
+      setColumnFilters(resetFilters);
+      setSortField(null);
+      setSortOrder('desc');
+    }
+  }, [state.isLoaded]);
 
   // 筛选面板显示状态
   const [openFilterPanel, setOpenFilterPanel] = useState(null);
@@ -995,8 +1069,8 @@ const TrajectoryView = ({ onSelectTrajectory, state, setState }) => {
 
 // --- Page 2-Detail: Trajectory Detail View ---
 const TrajectoryDetailView = ({ trajectoryId, onBack }) => {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     backend.getTrajectoryDetail(trajectoryId)
@@ -1186,6 +1260,17 @@ export default function App() {
     isLoaded: false
   });
 
+  const resetTrajectoryViewState = () => {
+    setTrajectoryViewState({
+      page: 1,
+      searchType: 'id',
+      searchTerm: '',
+      trajectories: [],
+      total: 0,
+      isLoaded: false
+    });
+  };
+
   const handleNavigateToTrajectories = (questionId) => {
     setTrajectoryViewState({
         page: 1,
@@ -1230,7 +1315,11 @@ export default function App() {
     <button
       onClick={() => {
         setActiveTab(id);
-        if (id !== 'trajectories') setSelectedTrajectoryId(null);
+        if (id === 'trajectories') {
+          // 切换到trajectories标签时重置状态以触发数据加载
+          resetTrajectoryViewState();
+        }
+        setSelectedTrajectoryId(null);
       }}
       className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors ${
         activeTab === id
