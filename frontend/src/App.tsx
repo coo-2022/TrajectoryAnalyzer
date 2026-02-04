@@ -5,6 +5,7 @@ import {
   AlertOctagon,
   Upload,
 } from 'lucide-react';
+import AnalysisView from './views/AnalysisView';
 import ImportView from './views/ImportView';
 import { TrajectoryView } from './views/TrajectoryView';
 import type { TrajectoryViewState } from './views/TrajectoryView';
@@ -74,13 +75,7 @@ export default function App() {
           />
         );
       case "analysis":
-        return (
-          <div className="flex flex-col items-center justify-center min-h-[400px]">
-            <AlertOctagon size={48} className="text-slate-300 mb-4" />
-            <h2 className="text-xl font-semibold text-slate-700 mb-2">Analysis Page</h2>
-            <p className="text-slate-500">此功能正在开发中，敬请期待...</p>
-          </div>
-        );
+        return <AnalysisView />;
       case "import": return <ImportView />;
       default: return <DashboardView onNavigate={handleNavigateToTrajectories} />;
     }
@@ -109,6 +104,7 @@ export default function App() {
   const NAV_ITEMS = [
     { id: "dashboard", label: "Overview", icon: LayoutDashboard },
     { id: "trajectories", label: "Trajectories", icon: FileText },
+    { id: "analysis", label: "Analysis", icon: AlertOctagon },
     { id: "import", label: "Import Data", icon: Upload },
   ];
 

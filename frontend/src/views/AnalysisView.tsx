@@ -5,8 +5,11 @@ import RewardCategoryStatsCard from '../components/analysis/RewardCategoryStatsC
 import ToolReturnStatsCard from '../components/analysis/ToolReturnStatsCard';
 import ProcessRewardCorrelationCard from '../components/analysis/ProcessRewardCorrelationCard';
 import UnexpectedToolContextsView from '../components/analysis/UnexpectedToolContextsView';
+import TrainingProgressTab from '../components/analysis/TrainingProgressTab';
+import TrainingComparisonTab from '../components/analysis/TrainingComparisonTab';
+import FailureAnalysisTab from '../components/analysis/FailureAnalysisTab';
 
-type TabType = 'overview' | 'tool-contexts';
+type TabType = 'overview' | 'tool-contexts' | 'training-progress' | 'training-comparison' | 'failure-analysis';
 
 export default function AnalysisView() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -35,7 +38,7 @@ export default function AnalysisView() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mt-4">
+        <div className="flex gap-1 mt-4 flex-wrap">
           <button
             onClick={() => setActiveTab('overview')}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
@@ -55,6 +58,36 @@ export default function AnalysisView() {
             }`}
           >
             Tool Contexts
+          </button>
+          <button
+            onClick={() => setActiveTab('training-progress')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'training-progress'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Training Progress
+          </button>
+          <button
+            onClick={() => setActiveTab('training-comparison')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'training-comparison'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Training Comparison
+          </button>
+          <button
+            onClick={() => setActiveTab('failure-analysis')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'failure-analysis'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Failure Analysis
           </button>
         </div>
       </header>
@@ -84,6 +117,24 @@ export default function AnalysisView() {
         {activeTab === 'tool-contexts' && (
           <div key={refreshKey}>
             <UnexpectedToolContextsView />
+          </div>
+        )}
+
+        {activeTab === 'training-progress' && (
+          <div key={refreshKey}>
+            <TrainingProgressTab />
+          </div>
+        )}
+
+        {activeTab === 'training-comparison' && (
+          <div key={refreshKey}>
+            <TrainingComparisonTab />
+          </div>
+        )}
+
+        {activeTab === 'failure-analysis' && (
+          <div key={refreshKey}>
+            <FailureAnalysisTab />
           </div>
         )}
       </main>
