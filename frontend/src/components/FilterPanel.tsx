@@ -391,7 +391,7 @@ export const ColumnHeader: React.FC<{
         <FilterPanel
           column={column}
           filter={filter}
-          onApply={(field, newFilter) => {
+          onApply={(_field, _newFilter) => {
             // This will be handled by parent
             setShowFilter(false);
           }}

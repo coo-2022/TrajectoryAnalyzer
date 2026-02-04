@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
