@@ -89,19 +89,83 @@ async def get_global_stats():
     service = get_trajectory_service()
     stats = await service.get_statistics()
 
+    # 获取轻量级数据计算问题总数和难度分布（使用向量化操作）
+    from backend.repositories.trajectory import TrajectoryRepository, create_default_vector_func
+    repo = TrajectoryRepository(get_db_path(), create_default_vector_func())
+    df = repo.get_lightweight_df()
+
+    if df.empty:
+        return JSONResponse(
+            content={
+                "totalQuestions": 0,
+                "totalTrajectories": 0,
+                "passAt1": 0.0,
+                "passAtK": 0.0,
+                "simpleRatio": 0.0,
+                "mediumRatio": 0.0,
+                "hardRatio": 0.0
+            },
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+
+    # 计算唯一问题数量
+    total_questions = df['data_id'].nunique()
+
+    # 使用向量化操作计算每个问题的成功率
+    analysis_df = repo.get_analysis_df()
+
+    if not analysis_df.empty:
+        # 合并分析结果
+        merged = df.merge(analysis_df, on='trajectory_id', how='left')
+        merged['is_success'] = merged['is_success'].fillna(False)
+
+        # 按data_id分组计算成功率
+        question_stats = merged.groupby('data_id').agg({
+            'is_success': ['sum', 'count']
+        }).reset_index()
+        question_stats.columns = ['data_id', 'success_count', 'total_count']
+        question_stats['success_rate'] = question_stats['success_count'] / question_stats['total_count']
+    else:
+        # 如果没有分析结果，使用reward>0作为成功标准
+        question_stats = df.groupby('data_id').agg({
+            'reward': [('success_count', lambda x: (x > 0).sum()), ('total_count', 'count')]
+        }).reset_index()
+        question_stats.columns = ['data_id', 'success_count', 'total_count']
+        question_stats['success_rate'] = question_stats['success_count'] / question_stats['total_count']
+
+    # 计算难度分布（向量化）
+    import numpy as np
+    conditions = [
+        question_stats['success_rate'] >= 0.7,
+        question_stats['success_rate'] >= 0.4
+    ]
+    choices = ['easy', 'medium']
+    question_stats['difficulty'] = np.select(conditions, choices, default='hard')
+
+    easy_count = int((question_stats['difficulty'] == 'easy').sum())
+    medium_count = int((question_stats['difficulty'] == 'medium').sum())
+    hard_count = int((question_stats['difficulty'] == 'hard').sum())
+
+    # 计算难度比例
+    total_diff = easy_count + medium_count + hard_count
+    simple_ratio = float(easy_count / total_diff) if total_diff > 0 else 0.0
+    medium_ratio = float(medium_count / total_diff) if total_diff > 0 else 0.0
+    hard_ratio = float(hard_count / total_diff) if total_diff > 0 else 0.0
+
     # 转换为前端期望的格式
     data = {
-        "totalQuestions": stats.total_count,
+        "totalQuestions": total_questions,
         "totalTrajectories": stats.total_count,
         "passAt1": stats.pass_at_1,
         "passAtK": stats.pass_at_k,
-        "simpleRatio": 0.0,  # 暂时设为0，需要从questions计算
-        "mediumRatio": 0.0,
-        "hardRatio": 0.0
+        "simpleRatio": simple_ratio,
+        "mediumRatio": medium_ratio,
+        "hardRatio": hard_ratio
     }
-
-    # TODO: 从service层获取难度分布统计
-    # 这需要额外的计算，暂时简化处理
 
     # 添加禁用缓存的响应头
     return JSONResponse(

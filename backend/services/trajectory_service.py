@@ -257,17 +257,31 @@ class TrajectoryService:
         total_count = len(df)
 
         # 计算成功率
-        merged_df = df.merge(analysis_df, on='trajectory_id', how='left')
-        merged_df['is_success'] = merged_df['is_success'].fillna(False)
-        success_count = int(merged_df['is_success'].sum())
-        failure_count = total_count - success_count
+        if not analysis_df.empty:
+            # 如果有分析结果，使用分析结果
+            merged_df = df.merge(analysis_df, on='trajectory_id', how='left')
+            merged_df['is_success'] = merged_df['is_success'].fillna(False)
+            success_count = int(merged_df['is_success'].sum())
+            failure_count = total_count - success_count
 
-        # Pass@1: 每个问题的平均成功率
-        question_stats = merged_df.groupby('trajectory_id')['is_success'].mean()
-        pass_at_1 = float(question_stats.mean()) if len(question_stats) > 0 else 0.0
+            # Pass@1: 每个问题(data_id)的平均成功率
+            question_stats = merged_df.groupby('data_id')['is_success'].mean()
+            pass_at_1 = float(question_stats.mean()) if len(question_stats) > 0 else 0.0
 
-        # Pass@K: 每个问题至少一次成功的比例
-        pass_at_k = float(merged_df['is_success'].max()) if total_count > 0 else 0.0
+            # Pass@K: 每个问题至少一次成功的比例
+            pass_at_k = float(question_stats[question_stats > 0].count() / len(question_stats)) if len(question_stats) > 0 else 0.0
+        else:
+            # 如果没有分析结果，使用reward>0作为成功标准
+            success_count = int((df['reward'] > 0).sum())
+            failure_count = total_count - success_count
+
+            # 按data_id分组计算成功率
+            question_stats = df.groupby('data_id').agg({
+                'reward': [('success', lambda x: (x > 0).mean()), ('count', 'count')]
+            })
+            question_stats.columns = question_stats.columns.droplevel(0)
+            pass_at_1 = float(question_stats['success'].mean()) if len(question_stats) > 0 else 0.0
+            pass_at_k = float((question_stats['success'] > 0).sum() / len(question_stats)) if len(question_stats) > 0 else 0.0
 
         # 平均值
         avg_reward = float(df['reward'].mean()) if 'reward' in df.columns else 0.0
