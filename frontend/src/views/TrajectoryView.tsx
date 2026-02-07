@@ -43,6 +43,10 @@ export interface TrajectoryViewState {
   trajectories: any[];
   total: number;
   isLoaded: boolean;
+  trainingId?: string;
+  epochId?: number | null;
+  iterationId?: number | null;
+  sampleId?: number | null;
 }
 
 export interface TrajectoryViewProps {
@@ -220,6 +224,20 @@ export const TrajectoryView: React.FC<TrajectoryViewProps> = ({ onSelectTrajecto
   const buildFilterParams = () => {
     const params: Record<string, any> = {};
 
+    // Add state-level filters first (from navigation)
+    if (state.trainingId) {
+      params.training_id = state.trainingId;
+    }
+    if (state.epochId !== undefined && state.epochId !== null) {
+      params.epoch_id = state.epochId;
+    }
+    if (state.iterationId !== undefined && state.iterationId !== null) {
+      params.iteration_id = state.iterationId;
+    }
+    if (state.sampleId !== undefined && state.sampleId !== null) {
+      params.sample_id = state.sampleId;
+    }
+
     Object.entries(columnFilters).forEach(([field, filter]) => {
       if (!filter.active) return;
 
@@ -227,6 +245,20 @@ export const TrajectoryView: React.FC<TrajectoryViewProps> = ({ onSelectTrajecto
         params.trajectory_id = filter.value;
       } else if (field === 'questionId' && filter.value) {
         params.data_id = filter.value;
+      } else if (field === 'training_id' && filter.value) {
+        params.training_id = filter.value;
+      } else if (field === 'epoch_id' && filter.conditions) {
+        if (filter.conditions.equals !== null && filter.conditions.equals !== undefined) {
+          params.epoch_id = filter.conditions.equals;
+        }
+      } else if (field === 'iteration_id' && filter.conditions) {
+        if (filter.conditions.equals !== null && filter.conditions.equals !== undefined) {
+          params.iteration_id = filter.conditions.equals;
+        }
+      } else if (field === 'sample_id' && filter.conditions) {
+        if (filter.conditions.equals !== null && filter.conditions.equals !== undefined) {
+          params.sample_id = filter.conditions.equals;
+        }
       } else if (field === 'task.question' && filter.value) {
         params.question = filter.value;
       } else if (field === 'isSuccess' && filter.selected?.length > 0) {

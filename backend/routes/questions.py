@@ -71,6 +71,13 @@ async def list_questions(
         else:
             question_text = "N/A"
 
+        # 获取训练信息（从第一条轨迹获取）
+        first_traj = question_df.iloc[0]
+        training_id = first_traj.get('training_id', '')
+        epoch_id = int(first_traj.get('epoch_id', 0)) if pd.notna(first_traj.get('epoch_id')) else None
+        iteration_id = int(first_traj.get('iteration_id', 0)) if pd.notna(first_traj.get('iteration_id')) else None
+        sample_id = int(first_traj.get('sample_id', 0)) if pd.notna(first_traj.get('sample_id')) else None
+
         # 统计成功/失败
         if not analysis_df.empty:
             merged = question_df.merge(analysis_df, on='trajectory_id', how='left')
@@ -98,7 +105,11 @@ async def list_questions(
             "successCount": success_count,
             "totalCount": total_count,
             "rate": rate,
-            "difficulty": difficulty
+            "difficulty": difficulty,
+            "training_id": training_id,
+            "epoch_id": epoch_id,
+            "iteration_id": iteration_id,
+            "sample_id": sample_id
         })
 
     # 按data_id排序

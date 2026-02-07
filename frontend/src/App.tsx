@@ -4,12 +4,14 @@ import {
   FileText,
   AlertOctagon,
   Upload,
+  HelpCircle,
 } from 'lucide-react';
 import AnalysisView from './views/AnalysisView';
 import ImportView from './views/ImportView';
 import { TrajectoryView } from './views/TrajectoryView';
 import type { TrajectoryViewState } from './views/TrajectoryView';
 import { DashboardView } from './views/DashboardView';
+import { QuestionsView } from './views/QuestionsView';
 import { TrajectoryDetailView } from './views/TrajectoryDetailView';
 
 // ==========================================
@@ -40,14 +42,32 @@ export default function App() {
     });
   };
 
-  const handleNavigateToTrajectories = (questionId: string) => {
+  const handleNavigateToTrajectories = (questionIdOrQuestion: string | any, filters?: {
+    trainingId?: string;
+    epochId?: number | null;
+    iterationId?: number | null;
+    sampleId?: number | null;
+  }) => {
+    // Handle both string questionId and question object
+    const questionId = typeof questionIdOrQuestion === 'string' ? questionIdOrQuestion : questionIdOrQuestion.id;
+    const questionFilters = typeof questionIdOrQuestion === 'object' ? {
+      trainingId: questionIdOrQuestion.training_id,
+      epochId: questionIdOrQuestion.epoch_id,
+      iterationId: questionIdOrQuestion.iteration_id,
+      sampleId: questionIdOrQuestion.sample_id,
+    } : filters;
+
     setTrajectoryViewState({
       page: 1,
       searchType: 'questionId',
       searchTerm: questionId,
       trajectories: [],
       total: 0,
-      isLoaded: false
+      isLoaded: false,
+      trainingId: questionFilters?.trainingId,
+      epochId: questionFilters?.epochId,
+      iterationId: questionFilters?.iterationId,
+      sampleId: questionFilters?.sampleId,
     });
     setActiveTab('trajectories');
     setSelectedTrajectoryId(null);
@@ -66,6 +86,8 @@ export default function App() {
     switch(activeTab) {
       case "dashboard":
         return <DashboardView onNavigate={handleNavigateToTrajectories} />;
+      case "questions":
+        return <QuestionsView onNavigate={handleNavigateToTrajectories} />;
       case "trajectories":
         return (
           <TrajectoryView
@@ -103,6 +125,7 @@ export default function App() {
 
   const NAV_ITEMS = [
     { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+    { id: "questions", label: "Questions", icon: HelpCircle },
     { id: "trajectories", label: "Trajectories", icon: FileText },
     { id: "analysis", label: "Analysis", icon: AlertOctagon },
     { id: "import", label: "Import Data", icon: Upload },
@@ -129,11 +152,13 @@ export default function App() {
 
       <main className="flex-1 md:ml-64 p-4 md:p-8 overflow-y-auto">
         <div className="w-full">
-          {!selectedTrajectoryId && activeTab !== 'analysis' && (
+          {!selectedTrajectoryId && (
             <div className="mb-8">
               <h1 className="text-2xl font-bold text-slate-900">
                 {activeTab === 'dashboard' && 'Analytics Overview'}
+                {activeTab === 'questions' && 'Questions'}
                 {activeTab === 'trajectories' && 'Trajectory List'}
+                {activeTab === 'analysis' && 'Analysis'}
                 {activeTab === 'import' && 'Import Trajectory Data'}
               </h1>
             </div>
