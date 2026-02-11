@@ -320,7 +320,7 @@ export default function ImportView() {
   const handleClearData = async () => {
     setClearing(true);
     try {
-      const res = await fetch(`${API_BASE}/clear-data`, {
+      const res = await fetch(`${API_BASE}/import/clear-data`, {
         method: 'POST'
       });
       if (res.ok) {
