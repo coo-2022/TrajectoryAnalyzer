@@ -206,6 +206,7 @@ async def clear_all_data():
     """
     import shutil
     import os
+    import gc
 
     try:
         # 获取数据库路径
@@ -214,17 +215,59 @@ async def clear_all_data():
 
         # 删除 lancedb 目录
         lancedb_path = os.path.join(data_dir, "lancedb")
+        cleared_paths = []
+
         if os.path.exists(lancedb_path):
             shutil.rmtree(lancedb_path)
+            cleared_paths.append(lancedb_path)
 
-        # 重新初始化服务
+        # 强制垃圾回收，释放文件句柄
+        gc.collect()
+
+        # 重新创建数据库目录
+        get_db_path()
+
+        # 重新初始化本模块的服务
         global service
         service = ImportService(get_db_path(), create_default_vector_func())
+
+        # 重新初始化其他模块的服务
+        try:
+            from backend.routes import trajectories, analysis, export, visualization, analysis_stats
+
+            # 重置 trajectories 服务
+            if hasattr(trajectories, 'service'):
+                from backend.services.trajectory_service import TrajectoryService
+                trajectories.service = TrajectoryService(get_db_path(), create_default_vector_func())
+
+            # 重置 analysis 服务
+            if hasattr(analysis, 'service'):
+                from backend.services.analysis_service import AnalysisService
+                analysis.service = AnalysisService(get_db_path(), create_default_vector_func())
+
+            # 重置 export 服务
+            if hasattr(export, 'service'):
+                from backend.services.trajectory_service import TrajectoryService
+                export.service = TrajectoryService(get_db_path(), create_default_vector_func())
+
+            # 重置 visualization 服务
+            if hasattr(visualization, 'service'):
+                from backend.services.visualization_service import VisualizationService
+                visualization.service = VisualizationService(get_db_path(), create_default_vector_func())
+
+            # 重置 analysis_stats 服务
+            if hasattr(analysis_stats, 'service'):
+                from backend.services.analysis_stats_service import AnalysisStatsService
+                analysis_stats.service = AnalysisStatsService()
+
+        except Exception as e:
+            logger.error(f"重新初始化服务时出错: {e}")
+            # 不抛出异常，因为数据已经清除成功
 
         return {
             "success": True,
             "message": "所有数据已清除",
-            "cleared_paths": [lancedb_path]
+            "cleared_paths": cleared_paths
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"清除数据失败: {str(e)}")
