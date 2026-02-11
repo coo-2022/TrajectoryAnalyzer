@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen } from 'lucide-react';
+import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, FolderOpen, Trash2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
@@ -65,6 +65,8 @@ export default function ImportView() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ImportLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 加载允许的目录
@@ -313,6 +315,25 @@ export default function ImportView() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleClearData = async () => {
+    setClearing(true);
+    try {
+      const res = await fetch(`${API_BASE}/clear-data`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setResult({ success: true, message: 'All data cleared successfully' });
+      } else {
+        const data = await res.json();
+        setResult({ success: false, message: data.detail || 'Failed to clear data' });
+      }
+    } catch (error) {
+      setResult({ success: false, message: 'Error clearing data: ' + String(error) });
+    }
+    setClearing(false);
+    setShowClearConfirm(false);
   };
 
   return (
@@ -752,6 +773,54 @@ export default function ImportView() {
           </div>
         </div>
       </div>
+
+      {/* Clear Data Section */}
+      <div className="mt-8 border-t border-slate-200 pt-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">
+          清除系统数据
+        </h3>
+        <p className="text-slate-600 text-sm mb-4">
+          删除所有轨迹和分析数据以重新开始。
+          此操作无法撤销。
+        </p>
+        <button
+          onClick={() => setShowClearConfirm(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" />
+          清除所有数据
+        </button>
+      </div>
+
+      {/* Clear Data Confirmation Dialog */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              确认清除数据
+            </h3>
+            <p className="text-slate-600 mb-4">
+              这将永久删除所有轨迹和分析数据。
+              此操作无法撤销。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleClearData}
+                disabled={clearing}
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 disabled:bg-rose-400"
+              >
+                {clearing ? '清除中...' : '确认清除所有数据'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -196,3 +196,35 @@ async def get_all_logs(limit: int = Query(100, ge=1, le=1000), level: Optional[s
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clear-data", response_model=Dict[str, Any])
+async def clear_all_data():
+    """清除所有数据（轨迹和分析数据）
+
+    警告：此操作会永久删除所有数据，不可恢复！
+    """
+    import shutil
+    import os
+
+    try:
+        # 获取数据库路径
+        db_path = get_db_path()
+        data_dir = os.path.dirname(db_path)
+
+        # 删除 lancedb 目录
+        lancedb_path = os.path.join(data_dir, "lancedb")
+        if os.path.exists(lancedb_path):
+            shutil.rmtree(lancedb_path)
+
+        # 重新初始化服务
+        global service
+        service = ImportService(get_db_path(), create_default_vector_func())
+
+        return {
+            "success": True,
+            "message": "所有数据已清除",
+            "cleared_paths": [lancedb_path]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"清除数据失败: {str(e)}")
