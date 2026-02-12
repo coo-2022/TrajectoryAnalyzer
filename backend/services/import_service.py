@@ -115,9 +115,97 @@ class ImportService:
 
         return len(errors) == 0, errors
 
+    def _detect_and_convert_nested_format(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """检测并转换嵌套格式的轨迹数据
+
+        支持的嵌套结构:
+        {
+            "iteration": "...",
+            "trajectories": [
+                {
+                    "trajectory": {
+                        "task": {...},
+                        "data_id": "...",
+                        "training_id": "...",
+                        "trajectory_id": "..."
+                    },
+                    "metrics": {...},
+                    "chat_completions": [...]
+                }
+            ]
+        }
+        """
+        # 检查是否是嵌套格式
+        if "trajectories" in data and isinstance(data["trajectories"], list):
+            # 这是一个包含多个轨迹的嵌套结构
+            return None  # 返回 None 表示这是批量结构，需要在外部处理
+
+        # 检查单个轨迹是否是嵌套格式
+        if "trajectory" in data and isinstance(data["trajectory"], dict):
+            nested = data["trajectory"]
+
+            # 提取基础信息
+            result = {
+                "trajectory_id": nested.get("trajectory_id", ""),
+                "data_id": nested.get("data_id", ""),
+                "training_id": nested.get("training_id", ""),
+                "epoch_id": int(nested.get("epoch_id", 0) or 0),
+                "iteration_id": int(nested.get("iteration_id", 0) or 0),
+                "sample_id": int(nested.get("sample_id", 0) or 0),
+            }
+
+            # 提取 task 信息
+            if "task" in nested and isinstance(nested["task"], dict):
+                task_info = nested["task"]
+                if "task" in task_info and isinstance(task_info["task"], dict):
+                    inner_task = task_info["task"]
+                    result["task"] = {
+                        "question": inner_task.get("problem", ""),
+                        "ground_truth": inner_task.get("ground_truth", "")
+                    }
+                    # 提取其他元数据
+                    result["agent_name"] = inner_task.get("agent_name", "")
+                else:
+                    result["task"] = {"question": "", "ground_truth": ""}
+            else:
+                result["task"] = {"question": "", "ground_truth": ""}
+
+            # 提取 metrics 信息
+            if "metrics" in data and isinstance(data["metrics"], dict):
+                metrics = data["metrics"]
+                result["reward"] = float(metrics.get("reward", 0) or 0)
+                result["toolcall_reward"] = float(metrics.get("toolcall_reward", 0) or 0)
+                result["res_reward"] = float(metrics.get("res_reward", 0) or 0)
+                result["exec_time"] = float(metrics.get("total_time", 0) or 0)
+            else:
+                result["reward"] = 0.0
+                result["toolcall_reward"] = 0.0
+                result["res_reward"] = 0.0
+                result["exec_time"] = 0.0
+
+            # 提取 chat_completions
+            if "chat_completions" in data and isinstance(data["chat_completions"], list):
+                result["chat_completions"] = data["chat_completions"]
+            else:
+                result["chat_completions"] = []
+
+            # 提取 steps（如果存在）
+            result["steps"] = []
+
+            return result
+
+        # 不是嵌套格式，返回原始数据
+        return data
+
     def _normalize_trajectory_data(self, traj_data: Dict[str, Any]) -> Dict[str, Any]:
         """标准化轨迹数据，处理格式差异"""
-        normalized = traj_data.copy()
+        # 首先尝试转换嵌套格式
+        converted = self._detect_and_convert_nested_format(traj_data)
+        if converted is None:
+            # 这是批量嵌套结构，不应该在这里处理
+            raise ValueError("批量嵌套结构应该在外部分解为单个轨迹")
+
+        normalized = converted.copy()
 
         # 0. 修复 trajectory_id：确保包含 tree_id
         if "trajectory_id" in normalized and "tree_id" in normalized:
@@ -275,9 +363,18 @@ class ImportService:
             trajectories = []
             if isinstance(data, dict):
                 if "trajectories" in data:
-                    trajectories = data["trajectories"]
+                    # 处理嵌套格式: { "iteration": "...", "trajectories": [ {...}, {...} ] }
+                    # 每个元素可能是 { "trajectory": {...}, "metrics": {...} }
+                    raw_trajectories = data["trajectories"]
+                    for item in raw_trajectories:
+                        if isinstance(item, dict) and "trajectory" in item:
+                            # 这是嵌套格式，提取整个 item 包含 trajectory 和 metrics
+                            trajectories.append(item)
+                        else:
+                            # 标准格式
+                            trajectories.append(item)
                 elif "trajectory" in data:
-                    trajectories = [data["trajectory"]]
+                    trajectories = [data]
                 else:
                     result.errors.append("Invalid JSON format. Expected 'trajectories' or 'trajectory' key")
                     result.status = "failed"
