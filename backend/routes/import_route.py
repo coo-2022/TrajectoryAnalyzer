@@ -233,7 +233,7 @@ async def clear_all_data():
 
         # 重新初始化其他模块的服务
         try:
-            from backend.routes import trajectories, analysis, export, visualization, analysis_stats
+            from backend.routes import trajectories, analysis, export, visualization, analysis_stats, questions
 
             # 重置 trajectories 服务
             if hasattr(trajectories, 'service'):
@@ -259,6 +259,14 @@ async def clear_all_data():
             if hasattr(analysis_stats, 'service'):
                 from backend.services.analysis_stats_service import AnalysisStatsService
                 analysis_stats.service = AnalysisStatsService()
+
+            # 重置 questions 模块的 repository 和缓存
+            if hasattr(questions, '_repository'):
+                from backend.repositories.trajectory import TrajectoryRepository
+                questions._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
+            if hasattr(questions, '_questions_cache'):
+                questions._questions_cache["data"] = None
+                questions._questions_cache["expire_time"] = 0
 
         except Exception as e:
             logger.error(f"重新初始化服务时出错: {e}")

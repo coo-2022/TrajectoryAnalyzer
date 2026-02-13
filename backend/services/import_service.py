@@ -680,6 +680,9 @@ class ImportService:
             # 记录历史
             self._add_history(task_id, str(path.name), result)
 
+            # 清除其他服务的缓存，确保新导入的数据立即可见
+            self._invalidate_services_cache()
+
         except Exception as e:
             logger.error(task_id, "导入失败", error=str(e))
             result.success = False
@@ -737,6 +740,52 @@ class ImportService:
         """搜索相似轨迹（用于验证导入后的数据）"""
         vector = self.vector_func(question)
         return self.repository.search_similar(vector, limit)
+
+    def _invalidate_services_cache(self):
+        """重新初始化其他服务的 repository，确保新导入的数据立即可见
+
+        问题：清除数据或导入后，各模块的 repository 可能仍持有旧的数据库句柄
+        解决：重新创建 repository 实例，强制连接到新的数据库
+        """
+        try:
+            from backend.repositories.trajectory import TrajectoryRepository, create_default_vector_func
+            from backend.config import get_db_path
+
+            # 重新初始化 trajectories 服务
+            from backend.routes import trajectories
+            if hasattr(trajectories, 'service'):
+                new_repo = TrajectoryRepository(get_db_path(), create_default_vector_func())
+                trajectories.service.repository = new_repo
+                if hasattr(trajectories.service, 'invalidate_cache'):
+                    trajectories.service.invalidate_cache()
+                logger.info("import_cache", "已重置 trajectories 服务")
+
+            # 重新初始化 questions 模块
+            from backend.routes import questions
+            if hasattr(questions, '_repository'):
+                questions._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
+            if hasattr(questions, '_questions_cache'):
+                questions._questions_cache["data"] = None
+                questions._questions_cache["expire_time"] = 0
+            logger.info("import_cache", "已重置 questions 服务")
+
+            # 重新初始化 export 服务
+            from backend.routes import export
+            if hasattr(export, 'service'):
+                export.service.repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
+                if hasattr(export.service, 'invalidate_cache'):
+                    export.service.invalidate_cache()
+
+            # 重新初始化 visualization 服务
+            from backend.routes import visualization
+            if hasattr(visualization, 'service'):
+                visualization.service.repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
+                if hasattr(visualization.service, 'invalidate_cache'):
+                    visualization.service.invalidate_cache()
+
+        except Exception as e:
+            # 缓存清除失败不影响导入结果
+            logger.warning("import_cache", "重置服务失败", error=str(e))
 
 
 # 清理旧任务
