@@ -238,6 +238,13 @@ export const TrajectoryView: React.FC<TrajectoryViewProps> = ({ onSelectTrajecto
       params.sample_id = state.sampleId;
     }
 
+    // 处理搜索类型和搜索词（从问题页面跳转）
+    if (state.searchType === 'questionId' && state.searchTerm) {
+      params.data_id = state.searchTerm;
+    } else if (state.searchType === 'trajectoryId' && state.searchTerm) {
+      params.trajectory_id = state.searchTerm;
+    }
+
     Object.entries(columnFilters).forEach(([field, filter]) => {
       if (!filter.active) return;
 

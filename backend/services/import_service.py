@@ -183,6 +183,13 @@ class ImportService:
                 result["res_reward"] = 0.0
                 result["exec_time"] = 0.0
 
+            # 提取 trajectory_reward（如果存在）
+            if "trajectory_reward" in data:
+                try:
+                    result["trajectory_reward"] = float(data["trajectory_reward"])
+                except (ValueError, TypeError):
+                    result["trajectory_reward"] = 0.0
+
             # 提取 chat_completions
             if "chat_completions" in data and isinstance(data["chat_completions"], list):
                 result["chat_completions"] = data["chat_completions"]
@@ -244,6 +251,31 @@ class ImportService:
         normalized.setdefault("termination_reason", "")
         normalized.setdefault("toolcall_reward", 0.0)
         normalized.setdefault("res_reward", 0.0)
+
+        # 2.5 处理 final_reward/trajectory_reward：优先使用作为 reward
+        # 如果存在 final_reward 或 trajectory_reward，使用它们作为 reward
+        final_reward_val = None
+        if "final_reward" in normalized:
+            try:
+                final_reward_val = float(normalized["final_reward"])
+            except (ValueError, TypeError):
+                pass
+        elif "trajectory_reward" in normalized:
+            try:
+                final_reward_val = float(normalized["trajectory_reward"])
+            except (ValueError, TypeError):
+                pass
+
+        if final_reward_val is not None and final_reward_val != 0.0:
+            normalized["reward"] = final_reward_val
+        # 如果 reward 为0且 res_reward 不为0，使用 res_reward 作为 reward
+        elif normalized.get("reward", 0) == 0.0 and "res_reward" in normalized:
+            try:
+                res_reward = float(normalized["res_reward"])
+                if res_reward != 0.0:
+                    normalized["reward"] = res_reward
+            except (ValueError, TypeError):
+                pass
 
         # 3. 转换 reward 类型
         if "reward" in normalized:
