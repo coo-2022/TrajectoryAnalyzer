@@ -4,12 +4,18 @@
 """
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+import pandas as pd
 
 from backend.services.analysis_stats_service import AnalysisStatsService
+from backend.repositories.trajectory import TrajectoryRepository, create_default_vector_func
+from backend.config import get_db_path
 
 router = APIRouter(prefix="/api/analysis-stats", tags=["analysis-stats"])
 service = AnalysisStatsService()
+
+# 初始化 repository
+_repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
 
 
 @router.get("/termination-stats")
@@ -157,6 +163,108 @@ async def get_process_reward_correlation() -> JSONResponse:
     data = service.get_process_reward_correlation()
     return JSONResponse(
         content=data,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@router.get("/latest-epoch")
+async def get_latest_epoch_stats() -> JSONResponse:
+    """
+    获取最新一次 epoch 的统计数据
+
+    Returns:
+        {
+            "latest_epoch": 最新 epoch_id,
+            "total_trajectories": 该 epoch 的轨迹总数,
+            "difficulty_distribution": {
+                "easy": {"count": 数量, "ratio": 比例},
+                "medium": {"count": 数量, "ratio": 比例},
+                "hard": {"count": 数量, "ratio": 比例}
+            },
+            "top5_difficult": [
+                {
+                    "data_id": "问题ID",
+                    "question": "问题文本",
+                    "success_rate": 成功率,
+                    "total_count": 轨迹数
+                }
+            ]
+        }
+    """
+    df = _repository.get_lightweight_df()
+
+    if df.empty:
+        return JSONResponse(
+            content={
+                "latest_epoch": None,
+                "total_trajectories": 0,
+                "difficulty_distribution": {"easy": {"count": 0, "ratio": 0}, "medium": {"count": 0, "ratio": 0}, "hard": {"count": 0, "ratio": 0}},
+                "top5_difficult": []
+            },
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+
+    # 获取最新 epoch
+    latest_epoch = int(df['epoch_id'].max())
+
+    # 过滤最新 epoch 的数据
+    epoch_df = df[df['epoch_id'] == latest_epoch]
+
+    # 按问题分组统计
+    question_stats = []
+    for data_id in epoch_df['data_id'].unique():
+        question_df = epoch_df[epoch_df['data_id'] == data_id]
+
+        # 获取问题文本
+        task_data = question_df.iloc[0]['task']
+        if isinstance(task_data, dict):
+            question_text = task_data.get('question', 'N/A')
+        else:
+            question_text = "N/A"
+
+        # 统计成功率（reward > 0 认为成功）
+        success_count = int((question_df['reward'] > 0).sum())
+        total_count = len(question_df)
+        success_rate = success_count / total_count if total_count > 0 else 0
+
+        question_stats.append({
+            "data_id": data_id,
+            "question": question_text,
+            "success_rate": success_rate,
+            "total_count": total_count
+        })
+
+    # 难度分布
+    easy_count = sum(1 for q in question_stats if q['success_rate'] >= 0.7)
+    medium_count = sum(1 for q in question_stats if 0.4 <= q['success_rate'] < 0.7)
+    hard_count = sum(1 for q in question_stats if q['success_rate'] < 0.4)
+    total_questions = len(question_stats)
+
+    difficulty_distribution = {
+        "easy": {"count": easy_count, "ratio": round(easy_count / total_questions, 2) if total_questions > 0 else 0},
+        "medium": {"count": medium_count, "ratio": round(medium_count / total_questions, 2) if total_questions > 0 else 0},
+        "hard": {"count": hard_count, "ratio": round(hard_count / total_questions, 2) if total_questions > 0 else 0}
+    }
+
+    # Top 5 困难问题（成功率最低）
+    question_stats.sort(key=lambda x: x['success_rate'])
+    top5_difficult = question_stats[:5]
+
+    return JSONResponse(
+        content={
+            "latest_epoch": latest_epoch,
+            "total_trajectories": len(epoch_df),
+            "difficulty_distribution": difficulty_distribution,
+            "top5_difficult": top5_difficult
+        },
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",

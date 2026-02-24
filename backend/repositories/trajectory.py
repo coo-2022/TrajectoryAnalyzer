@@ -456,7 +456,8 @@ class TrajectoryRepository:
         cols = [
             "trajectory_id", "data_id", "task", "reward",
             "step_count", "exec_time", "agent_name", "is_analyzed",
-            "tags_json", "is_bookmarked", "notes", "source"
+            "tags_json", "is_bookmarked", "notes", "source",
+            "epoch_id", "iteration_id", "sample_id", "training_id"
         ]
         df = self.tbl.search().select(cols).limit(limit).to_pandas()
         return df

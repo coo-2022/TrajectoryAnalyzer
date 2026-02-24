@@ -125,10 +125,6 @@ export const QuestionsView: React.FC<QuestionsViewProps> = ({ onNavigate }) => {
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase w-32">Train ID</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase w-20">Epoch</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase w-24">Iteration</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase w-20">Sample</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Question</th>
               <th
                 className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase w-40 cursor-pointer hover:bg-slate-100 transition-colors"
@@ -145,27 +141,15 @@ export const QuestionsView: React.FC<QuestionsViewProps> = ({ onNavigate }) => {
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
             {loading ? (
-              <tr><td colSpan={8} className="px-6 py-10 text-center text-slate-500">Loading...</td></tr>
+              <tr><td colSpan={4} className="px-6 py-10 text-center text-slate-500">Loading...</td></tr>
             ) : sortedQuestions.map((q) => (
               <tr
                 key={q.id}
                 onClick={() => onNavigate(q)}
                 className="hover:bg-blue-50 transition-colors cursor-pointer group"
               >
-                <td className="px-4 py-4 whitespace-nowrap text-sm font-mono text-slate-500 group-hover:text-blue-600">
-                  {q.training_id || '-'}
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">
-                  {q.epoch_id ?? '-'}
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">
-                  {q.iteration_id ?? '-'}
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">
-                  {q.sample_id ?? '-'}
-                </td>
                 <td className="px-4 py-4 text-sm text-slate-800">
-                  <div className="max-w-md truncate" title={q.question}>{q.question}</div>
+                  <div className="max-w-xl truncate" title={q.question}>{q.question}</div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-600">
                   <div className="flex items-center">
