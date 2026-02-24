@@ -475,36 +475,45 @@ export const TrajectoryView: React.FC<TrajectoryViewProps> = ({ onSelectTrajecto
                   </div>
                 ))}
 
-                {/* Number Range Filters */}
+                {/* Exact Value Filters (Epoch, Iteration, Sample) */}
                 {[
                   { id: 'epoch_id', label: 'Epoch' },
                   { id: 'iteration_id', label: 'Iteration' },
                   { id: 'sample_id', label: 'Sample' },
-                  { id: 'step_count', label: 'Steps' },
-                  { id: 'exec_time', label: 'Time (s)' },
-                  { id: 'reward', label: 'Reward' },
                 ].map(({ id, label }) => (
                   <div key={id} className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-600">{label} Range</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={numberFilters[id]?.min ?? ''}
-                        onChange={(e) => handleNumberFilterChange(id, 'min', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <span className="text-slate-400">-</span>
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={numberFilters[id]?.max ?? ''}
-                        onChange={(e) => handleNumberFilterChange(id, 'max', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
+                    <label className="text-xs font-medium text-slate-600">{label}</label>
+                    <input
+                      type="number"
+                      placeholder={`Enter ${label.toLowerCase()}...`}
+                      value={filters[id] || ''}
+                      onChange={(e) => handleFilterChange(id, e.target.value ? parseInt(e.target.value) : undefined)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
                   </div>
                 ))}
+
+                {/* Number Range Filters (Reward only) */}
+                <div key="reward" className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-600">Reward Range</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={numberFilters['reward']?.min ?? ''}
+                      onChange={(e) => handleNumberFilterChange('reward', 'min', e.target.value)}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <span className="text-slate-400">-</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={numberFilters['reward']?.max ?? ''}
+                      onChange={(e) => handleNumberFilterChange('reward', 'max', e.target.value)}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
