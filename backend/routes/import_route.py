@@ -354,6 +354,12 @@ async def clear_all_data():
                 questions._questions_cache["data"] = None
                 questions._questions_cache["expire_time"] = 0
 
+            # 重置 main 模块的全局 trajectory_service
+            from backend import main
+            if hasattr(main, '_trajectory_service') and main._trajectory_service is not None:
+                from backend.services.trajectory_service import TrajectoryService
+                main._trajectory_service = TrajectoryService(get_db_path(), create_default_vector_func())
+
         except Exception as e:
             logger.error(f"重新初始化服务时出错: {e}")
             # 不抛出异常，因为数据已经清除成功

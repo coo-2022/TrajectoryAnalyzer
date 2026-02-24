@@ -11,6 +11,7 @@ from backend.models.import_result import ImportResult, ImportHistory
 from backend.repositories.trajectory import TrajectoryRepository, create_default_vector_func
 from backend.config import settings, get_db_path
 from backend.services.logger_service import logger
+from backend.services.trajectory_service import TrajectoryService
 
 
 # 内存中存储导入任务状态
@@ -820,6 +821,12 @@ class ImportService:
             if hasattr(analysis_stats, '_repository'):
                 analysis_stats._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
             logger.info("import_cache", "已重置 analysis_stats 服务")
+
+            # 重新初始化 main 模块的全局 trajectory_service
+            from backend import main
+            if hasattr(main, '_trajectory_service') and main._trajectory_service is not None:
+                main._trajectory_service = TrajectoryService(get_db_path(), create_default_vector_func())
+                logger.info("import_cache", "已重置 main._trajectory_service")
 
         except Exception as e:
             # 缓存清除失败不影响导入结果
