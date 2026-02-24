@@ -89,10 +89,10 @@ class FilePathRequest(BaseModel):
 
 @router.post("/json", response_model=Dict[str, Any], status_code=202)
 async def import_json_file(file: UploadFile = File(...)):
-    """导入JSON文件 - 支持大文件上传（流式处理）
+    """导入文件 - 支持JSON和JSONL格式自动检测（流式处理）
 
-    注意：此方式会将文件上传到服务器，会产生网络传输和临时文件
-    推荐使用 POST /api/import/from-path 直接指定本地文件路径
+    自动检测文件格式（.json 或 .jsonl），使用与路径导入相同的逻辑
+    支持大文件上传
     """
     import tempfile
     import os
@@ -102,13 +102,24 @@ async def import_json_file(file: UploadFile = File(...)):
 
     try:
         # 创建临时文件
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
             temp_file_path = temp_file.name
             # 使用流式写入，支持大文件
             shutil.copyfileobj(file.file, temp_file)
 
-        # 执行导入
-        result = await service.import_from_json(temp_file_path)
+        # 自动检测文件格式（与 from-path 使用相同逻辑）
+        detected_format, error_msg = detect_file_format(temp_file_path)
+        if detected_format == "unknown":
+            os.unlink(temp_file_path)
+            raise HTTPException(status_code=400, detail=error_msg or "无法识别文件格式")
+
+        logger.info("import_upload", f"上传文件格式检测: {detected_format}", file_name=file.filename)
+
+        # 根据检测到的格式执行导入
+        if detected_format == "jsonl":
+            result = await service.import_from_jsonl(temp_file_path)
+        else:
+            result = await service.import_from_json(temp_file_path)
 
         # 删除临时文件
         if os.path.exists(temp_file_path):
@@ -116,6 +127,11 @@ async def import_json_file(file: UploadFile = File(...)):
 
         return result.model_dump()
 
+    except HTTPException:
+        # 清理临时文件
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+        raise
     except Exception as e:
         # 清理临时文件
         if temp_file_path and os.path.exists(temp_file_path):
