@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  LayoutDashboard,
   Filter,
   Loader2,
   X,
   CheckCircle,
   XCircle,
   Search,
-  ChevronDown,
   SlidersHorizontal,
   RotateCcw
 } from 'lucide-react';
@@ -24,6 +22,13 @@ export interface TrajectoryViewState {
   trajectories: any[];
   total: number;
   isLoaded: boolean;
+  // 过滤条件状态
+  filters?: Record<string, any>;
+  numberFilters?: Record<string, { min?: number; max?: number }>;
+  sortField?: string | null;
+  sortOrder?: 'asc' | 'desc';
+  searchInput?: string;
+  showFilterPanel?: boolean;
 }
 
 export interface TrajectoryViewProps {
@@ -152,17 +157,31 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export const TrajectoryView: React.FC<TrajectoryViewProps> = ({ onSelectTrajectory, state, setState }) => {
   const [loading, setLoading] = useState(false);
-  const [sortField, setSortField] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // 从 state 中恢复排序状态，默认为 null 和 'desc'
+  const [sortField, setSortField] = useState<string | null>(state.sortField ?? null);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(state.sortOrder ?? 'desc');
 
-  // 过滤状态
-  const [filters, setFilters] = useState<Record<string, any>>({});
-  const [numberFilters, setNumberFilters] = useState<Record<string, { min?: number; max?: number }>>({});
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
+  // 过滤状态 - 从 state 中恢复
+  const [filters, setFilters] = useState<Record<string, any>>(state.filters ?? {});
+  const [numberFilters, setNumberFilters] = useState<Record<string, { min?: number; max?: number }>>(state.numberFilters ?? {});
+  const [showFilterPanel, setShowFilterPanel] = useState(state.showFilterPanel ?? false);
+  const [searchInput, setSearchInput] = useState(state.searchInput ?? '');
 
   // 防抖的搜索输入
   const debouncedSearch = useDebounce(searchInput, 300);
+
+  // 当过滤条件变化时，同步到父组件 state
+  useEffect(() => {
+    setState(prev => ({
+      ...prev,
+      filters,
+      numberFilters,
+      sortField,
+      sortOrder,
+      searchInput,
+      showFilterPanel
+    }));
+  }, [filters, numberFilters, sortField, sortOrder, searchInput, showFilterPanel]);
 
   // 加载数据
   const loadData = useCallback(async (page: number, currentFilters: Record<string, any> = {}, currentSortField?: string, currentSortOrder?: string) => {
