@@ -481,7 +481,7 @@ class ImportService:
     async def import_from_jsonl(self, file_path: str, skip_duplicate_check: bool = False) -> ImportResult:
         """从JSONL文件导入轨迹（流式处理，适合超大文件）
 
-        支持两种JSONL格式：
+        支持三种JSONL格式：
         1. 每行一个独立的JSON对象
            {"trajectory_id": "1", ...}
            {"trajectory_id": "2", ...}
@@ -489,6 +489,12 @@ class ImportService:
         2. 每行包含trajectories数组的JSON对象
            {"iteration": "0", "trajectories": [...]}
            {"iteration": "1", "trajectories": [...]}
+
+        3. 多行JSON对象（pretty-printed，跨越多行）
+           {
+             "trajectory_id": "1",
+             ...
+           }
         """
         task_id = f"import_{int(time.time())}"
         result = ImportResult(
@@ -540,131 +546,214 @@ class ImportService:
 
             logger.info(task_id, "开始解析文件内容...")
 
-            with open(path, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f, 1):
-                    if not line.strip():  # 跳过空行
-                        continue
+            # 支持多行JSON对象的解析 - 使用递归下降解析器
+            json_buffer = ""
 
-                    line_count += 1
+            def process_json_object(obj_data: dict, line_num: int):
+                """处理单个JSON对象（可能是轨迹或包含trajectories数组）"""
+                nonlocal batch, total_count, batch_start_time, result
 
-                    try:
-                        line_data = json.loads(line)
+                try:
+                    # 判断格式：如果包含"trajectories"字段，则遍历数组
+                    if isinstance(obj_data, dict) and "trajectories" in obj_data:
+                        trajectories = obj_data["trajectories"]
+                        if not isinstance(trajectories, list):
+                            error_msg = f"Line {line_num}: 'trajectories' must be a list"
+                            logger.error(task_id, "数据格式错误", line=line_num, error=error_msg)
+                            result.failed_count += 1
+                            result.errors.append(error_msg)
+                            return
 
-                        # 判断格式：如果包含"trajectories"字段，则遍历数组
-                        if isinstance(line_data, dict) and "trajectories" in line_data:
-                            trajectories = line_data["trajectories"]
-                            if not isinstance(trajectories, list):
-                                error_msg = f"Line {line_num}: 'trajectories' must be a list"
-                                logger.error(task_id, "数据格式错误", line=line_num, error=error_msg)
-                                result.failed_count += len(trajectories) if isinstance(trajectories, list) else 1
-                                result.errors.append(error_msg)
-                                continue
+                        # 处理数组中的每个轨迹
+                        for traj_idx, traj_data in enumerate(trajectories):
+                            try:
+                                # 标准化数据
+                                traj_data = self._normalize_trajectory_data(traj_data)
 
-                            # 处理数组中的每个轨迹
-                            for traj_idx, traj_data in enumerate(trajectories):
-                                try:
-                                    # 标准化数据
-                                    traj_data = self._normalize_trajectory_data(traj_data)
-
-                                    # 验证
-                                    is_valid, errors = self.validate_trajectory(traj_data)
-                                    if not is_valid:
-                                        error_msg = f"Line {line_num}[{traj_idx}]: {', '.join(errors)}"
-                                        logger.warning(task_id, "轨迹验证失败", line=line_num, index=traj_idx, errors=errors)
-                                        result.failed_count += 1
-                                        result.errors.append(error_msg)
-                                        continue
-
-                                    # 检查重复
-                                    traj_id = traj_data.get("trajectory_id")
-                                    if not skip_duplicate_check and traj_id in existing_ids:
-                                        logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num, index=traj_idx)
-                                        result.skipped_count += 1
-                                        continue
-
-                                    # 创建轨迹对象（不立即插入）
-                                    trajectory = Trajectory(**traj_data)
-                                    trajectory.source = "jsonl_import"
-                                    trajectory.created_at = time.time()
-                                    trajectory.updated_at = time.time()
-
-                                    # 添加到批量
-                                    batch.append(trajectory)
-
-                                    # 批量插入
-                                    if len(batch) >= self.BATCH_SIZE:
-                                        self.repository.add_batch(batch)
-                                        result.imported_count += len(batch)
-                                        total_count += len(batch)
-
-                                        # 批量插入性能日志
-                                        batch_time = time.time() - batch_start_time
-                                        logger.info(task_id, "批量插入完成",
-                                                  batch_size=len(batch),
-                                                  elapsed=f"{batch_time:.2f}s",
-                                                  throughput=f"{len(batch)/batch_time:.1f}条/秒")
-
-                                        batch = []
-                                        batch_start_time = time.time()
-
-                                    if total_count % 1000 == 0:
-                                        logger.info(task_id, "导入进度", imported=total_count, line=line_num)
-
-                                except Exception as e:
-                                    error_msg = f"Line {line_num}[{traj_idx}]: {str(e)}"
-                                    logger.error(task_id, "导入轨迹失败", line=line_num, index=traj_idx, error=str(e))
+                                # 验证
+                                is_valid, errors = self.validate_trajectory(traj_data)
+                                if not is_valid:
+                                    error_msg = f"Line {line_num}[{traj_idx}]: {', '.join(errors)}"
+                                    logger.warning(task_id, "轨迹验证失败", line=line_num, index=traj_idx, errors=errors)
                                     result.failed_count += 1
                                     result.errors.append(error_msg)
-                        else:
-                            # 格式1：每行一个轨迹对象
-                            traj_data = line_data
+                                    continue
 
-                            # 标准化数据
-                            traj_data = self._normalize_trajectory_data(traj_data)
+                                # 检查重复
+                                traj_id = traj_data.get("trajectory_id")
+                                if not skip_duplicate_check and traj_id in existing_ids:
+                                    logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num, index=traj_idx)
+                                    result.skipped_count += 1
+                                    continue
 
-                            # 验证
-                            is_valid, errors = self.validate_trajectory(traj_data)
-                            if not is_valid:
-                                error_msg = f"Line {line_num}: {', '.join(errors)}"
-                                logger.warning(task_id, "轨迹验证失败", line=line_num, errors=errors)
+                                # 创建轨迹对象（不立即插入）
+                                trajectory = Trajectory(**traj_data)
+                                trajectory.source = "jsonl_import"
+                                trajectory.created_at = time.time()
+                                trajectory.updated_at = time.time()
+
+                                # 添加到批量
+                                batch.append(trajectory)
+
+                                # 批量插入
+                                if len(batch) >= self.BATCH_SIZE:
+                                    self.repository.add_batch(batch)
+                                    result.imported_count += len(batch)
+                                    total_count += len(batch)
+
+                                    # 批量插入性能日志
+                                    batch_time = time.time() - batch_start_time
+                                    logger.info(task_id, "批量插入完成",
+                                              batch_size=len(batch),
+                                              elapsed=f"{batch_time:.2f}s",
+                                              throughput=f"{len(batch)/batch_time:.1f}条/秒")
+
+                                    batch = []
+                                    batch_start_time = time.time()
+
+                                if total_count % 1000 == 0:
+                                    logger.info(task_id, "导入进度", imported=total_count, line=line_num)
+
+                            except Exception as e:
+                                error_msg = f"Line {line_num}[{traj_idx}]: {str(e)}"
+                                logger.error(task_id, "导入轨迹失败", line=line_num, index=traj_idx, error=str(e))
                                 result.failed_count += 1
                                 result.errors.append(error_msg)
-                                continue
+                    else:
+                        # 单个轨迹对象
+                        traj_data = obj_data
 
-                            # 检查重复
-                            traj_id = traj_data.get("trajectory_id")
-                            if not skip_duplicate_check and traj_id in existing_ids:
-                                logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num)
-                                result.skipped_count += 1
-                                continue
+                        # 标准化数据
+                        traj_data = self._normalize_trajectory_data(traj_data)
 
-                            # 创建轨迹对象（不立即插入）
-                            trajectory = Trajectory(**traj_data)
-                            trajectory.source = "jsonl_import"
-                            trajectory.created_at = time.time()
-                            trajectory.updated_at = time.time()
+                        # 验证
+                        is_valid, errors = self.validate_trajectory(traj_data)
+                        if not is_valid:
+                            error_msg = f"Line {line_num}: {', '.join(errors)}"
+                            logger.warning(task_id, "轨迹验证失败", line=line_num, errors=errors)
+                            result.failed_count += 1
+                            result.errors.append(error_msg)
+                            return
 
-                            # 添加到批量
-                            batch.append(trajectory)
+                        # 检查重复
+                        traj_id = traj_data.get("trajectory_id")
+                        if not skip_duplicate_check and traj_id in existing_ids:
+                            logger.info(task_id, "跳过重复轨迹", trajectory_id=traj_id, line=line_num)
+                            result.skipped_count += 1
+                            return
 
-                            # 批量插入
-                            if len(batch) >= self.BATCH_SIZE:
-                                self.repository.add_batch(batch)
-                                result.imported_count += len(batch)
-                                total_count += len(batch)
+                        # 创建轨迹对象（不立即插入）
+                        trajectory = Trajectory(**traj_data)
+                        trajectory.source = "jsonl_import"
+                        trajectory.created_at = time.time()
+                        trajectory.updated_at = time.time()
 
-                                # 批量插入性能日志
-                                batch_time = time.time() - batch_start_time
-                                logger.info(task_id, "批量插入完成",
-                                          batch_size=len(batch),
-                                          elapsed=f"{batch_time:.2f}s",
-                                          throughput=f"{len(batch)/batch_time:.1f}条/秒")
+                        # 添加到批量
+                        batch.append(trajectory)
 
-                                batch = []
-                                batch_start_time = time.time()
+                        # 批量插入
+                        if len(batch) >= self.BATCH_SIZE:
+                            self.repository.add_batch(batch)
+                            result.imported_count += len(batch)
+                            total_count += len(batch)
 
-                        # 每100条或每10行更新一次进度
-                        if total_count % 100 == 0 or line_count % 10 == 0:
+                            # 批量插入性能日志
+                            batch_time = time.time() - batch_start_time
+                            logger.info(task_id, "批量插入完成",
+                                      batch_size=len(batch),
+                                      elapsed=f"{batch_time:.2f}s",
+                                      throughput=f"{len(batch)/batch_time:.1f}条/秒")
+
+                            batch = []
+                            batch_start_time = time.time()
+
+                except Exception as e:
+                    error_msg = f"Line {line_num}: {str(e)}"
+                    logger.error(task_id, "处理JSON对象失败", line=line_num, error=str(e))
+                    result.failed_count += 1
+                    result.errors.append(error_msg)
+
+            def try_parse_buffer():
+                """尝试解析缓冲区中的JSON，支持多行JSON对象"""
+                nonlocal json_buffer
+
+                buffer = json_buffer.strip()
+                if not buffer:
+                    return True  # 缓冲区为空
+
+                # 尝试直接解析（单行JSON）
+                try:
+                    obj = json.loads(buffer)
+                    json_buffer = ""  # 清空缓冲区
+                    return obj
+                except json.JSONDecodeError:
+                    pass
+
+                # 尝试查找完整的JSON对象（多行情况）
+                # 使用括号匹配来找到完整的JSON对象
+                brace_count = 0
+                in_string = False
+                escape_next = False
+                obj_start = -1
+
+                for i, char in enumerate(buffer):
+                    if escape_next:
+                        escape_next = False
+                        continue
+
+                    if char == '\\' and in_string:
+                        escape_next = True
+                        continue
+
+                    if char == '"' and not in_string:
+                        in_string = True
+                        continue
+
+                    if char == '"' and in_string:
+                        in_string = False
+                        continue
+
+                    if not in_string:
+                        if char == '{':
+                            if brace_count == 0:
+                                obj_start = i
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0 and obj_start >= 0:
+                                # 找到一个完整的JSON对象
+                                try:
+                                    obj = json.loads(buffer[obj_start:i+1])
+                                    # 保留剩余部分到缓冲区
+                                    json_buffer = buffer[i+1:]
+                                    return obj
+                                except json.JSONDecodeError:
+                                    # 不是有效的JSON，继续查找
+                                    continue
+
+                # 没有找到完整的JSON对象
+                return None
+
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line_count += 1
+                    json_buffer += line
+
+                    # 尝试解析缓冲区中的JSON对象
+                    while True:
+                        obj = try_parse_buffer()
+                        if obj is None:
+                            # 缓冲区中没有完整的JSON对象，继续读取
+                            break
+                        if obj is True:
+                            # 缓冲区为空
+                            break
+
+                        # 成功解析到一个JSON对象
+                        process_json_object(obj, line_count)
+
+                        # 更新进度
+                        if total_count % 100 == 0:
                             result.progress = min(90, total_count // 10)
                             logger.info(task_id, "导入进度更新",
                                       imported=total_count,
@@ -672,16 +761,11 @@ class ImportService:
                                       failed=result.failed_count,
                                       progress=result.progress)
 
-                    except json.JSONDecodeError as e:
-                        error_msg = f"Line {line_num}: Invalid JSON - {str(e)}"
-                        logger.error(task_id, "JSON解析失败", line=line_num, error=str(e))
-                        result.failed_count += 1
-                        result.errors.append(error_msg)
-                    except Exception as e:
-                        error_msg = f"Line {line_num}: {str(e)}"
-                        logger.error(task_id, "处理行失败", line=line_num, error=str(e))
-                        result.failed_count += 1
-                        result.errors.append(error_msg)
+            # 处理缓冲区中剩余的内容
+            if json_buffer.strip():
+                obj = try_parse_buffer()
+                if obj and obj is not True:
+                    process_json_object(obj, line_count)
 
             # 插入剩余记录
             if batch:
