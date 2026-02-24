@@ -259,6 +259,9 @@ async def clear_all_data():
             if hasattr(analysis_stats, 'service'):
                 from backend.services.analysis_stats_service import AnalysisStatsService
                 analysis_stats.service = AnalysisStatsService()
+            if hasattr(analysis_stats, '_repository'):
+                from backend.repositories.trajectory import TrajectoryRepository
+                analysis_stats._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
 
             # 重置 questions 模块的 repository 和缓存
             if hasattr(questions, '_repository'):

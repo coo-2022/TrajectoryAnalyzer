@@ -815,6 +815,12 @@ class ImportService:
                 if hasattr(visualization.service, 'invalidate_cache'):
                     visualization.service.invalidate_cache()
 
+            # 重新初始化 analysis_stats 模块
+            from backend.routes import analysis_stats
+            if hasattr(analysis_stats, '_repository'):
+                analysis_stats._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
+            logger.info("import_cache", "已重置 analysis_stats 服务")
+
         except Exception as e:
             # 缓存清除失败不影响导入结果
             logger.warning("import_cache", "重置服务失败", error=str(e))
