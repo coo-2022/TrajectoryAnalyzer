@@ -360,20 +360,14 @@ class TrajectoryRepository:
         """
         clauses = []
 
-        # 精确匹配字段
-        exact_match_fields = ["data_id", "agent_name", "training_id"]
-        for field in exact_match_fields:
+        # 模糊匹配字段（文本类型）
+        fuzzy_match_fields = ["data_id", "agent_name", "training_id"]
+        for field in fuzzy_match_fields:
             if field in filters and filters[field]:
                 value = filters[field]
-                # 支持LIKE部分匹配
-                if isinstance(value, str) and '*' in value:
-                    # SQL输入清洗：转义单引号
-                    safe_value = value.replace("'", "''").replace('*', '%')
-                    clauses.append(f"{field} LIKE '{safe_value}'")
-                else:
-                    # SQL输入清洗：转义单引号
-                    safe_value = str(value).replace("'", "''")
-                    clauses.append(f"{field} = '{safe_value}'")
+                # 默认使用模糊匹配
+                safe_value = str(value).replace("'", "''")
+                clauses.append(f"{field} LIKE '%{safe_value}%'")
 
         # 模糊匹配字段（带SQL输入清洗）
         if "trajectory_id" in filters and filters["trajectory_id"]:
