@@ -224,25 +224,26 @@ export const TrajectoryView: React.FC<TrajectoryViewProps> = ({ onSelectTrajecto
   const buildFilterParams = () => {
     const params: Record<string, any> = {};
 
-    // Add state-level filters first (from navigation)
-    if (state.trainingId) {
-      params.training_id = state.trainingId;
-    }
-    if (state.epochId !== undefined && state.epochId !== null) {
-      params.epoch_id = state.epochId;
-    }
-    if (state.iterationId !== undefined && state.iterationId !== null) {
-      params.iteration_id = state.iterationId;
-    }
-    if (state.sampleId !== undefined && state.sampleId !== null) {
-      params.sample_id = state.sampleId;
-    }
-
     // 处理搜索类型和搜索词（从问题页面跳转）
+    // 当从问题页面点击跳转时，只使用 questionId 过滤，不添加其他过滤条件
     if (state.searchType === 'questionId' && state.searchTerm) {
       params.data_id = state.searchTerm;
     } else if (state.searchType === 'trajectoryId' && state.searchTerm) {
       params.trajectory_id = state.searchTerm;
+    } else {
+      // 非问题跳转场景时，才使用 state-level filters
+      if (state.trainingId) {
+        params.training_id = state.trainingId;
+      }
+      if (state.epochId !== undefined && state.epochId !== null) {
+        params.epoch_id = state.epochId;
+      }
+      if (state.iterationId !== undefined && state.iterationId !== null) {
+        params.iteration_id = state.iterationId;
+      }
+      if (state.sampleId !== undefined && state.sampleId !== null) {
+        params.sample_id = state.sampleId;
+      }
     }
 
     Object.entries(columnFilters).forEach(([field, filter]) => {

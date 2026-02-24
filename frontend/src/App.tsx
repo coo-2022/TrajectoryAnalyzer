@@ -42,20 +42,9 @@ export default function App() {
     });
   };
 
-  const handleNavigateToTrajectories = (questionIdOrQuestion: string | any, filters?: {
-    trainingId?: string;
-    epochId?: number | null;
-    iterationId?: number | null;
-    sampleId?: number | null;
-  }) => {
-    // Handle both string questionId and question object
+  const handleNavigateToTrajectories = (questionIdOrQuestion: string | any) => {
+    // 只使用问题ID进行过滤，不添加iter、sample等其他过滤条件
     const questionId = typeof questionIdOrQuestion === 'string' ? questionIdOrQuestion : questionIdOrQuestion.id;
-    const questionFilters = typeof questionIdOrQuestion === 'object' ? {
-      trainingId: questionIdOrQuestion.training_id,
-      epochId: questionIdOrQuestion.epoch_id,
-      iterationId: questionIdOrQuestion.iteration_id,
-      sampleId: questionIdOrQuestion.sample_id,
-    } : filters;
 
     setTrajectoryViewState({
       page: 1,
@@ -64,10 +53,6 @@ export default function App() {
       trajectories: [],
       total: 0,
       isLoaded: false,
-      trainingId: questionFilters?.trainingId,
-      epochId: questionFilters?.epochId,
-      iterationId: questionFilters?.iterationId,
-      sampleId: questionFilters?.sampleId,
     });
     setActiveTab('trajectories');
     setSelectedTrajectoryId(null);
