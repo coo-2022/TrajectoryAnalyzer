@@ -12,14 +12,16 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api
 class APIBackend {
   async fetchJSON(endpoint: string, params: Record<string, any> = {}) {
     try {
-      const url = new URL(`${API_BASE}${endpoint}`);
+      // 支持相对路径（用于外部访问时通过前端代理）
+      const urlString = API_BASE ? `${API_BASE}${endpoint}` : endpoint;
+      const url = new URL(urlString, window.location.origin);
       Object.keys(params).forEach(key => {
         if (params[key] !== undefined && params[key] !== '') {
           url.searchParams.append(key, params[key]);
         }
       });
 
-      const response = await fetch(url);
+      const response = await fetch(url.toString());
       if (!response.ok) {
         throw new Error(`API Error: ${response.statusText}`);
       }

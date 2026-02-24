@@ -3,6 +3,16 @@ import { Upload, FileText, CheckCircle, XCircle, Loader2, Download, Info, Folder
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
+// 构建完整 URL（支持相对路径）
+const buildUrl = (endpoint: string) => {
+  if (API_BASE && !API_BASE.startsWith('/')) {
+    return `${API_BASE}${endpoint}`;
+  }
+  // 使用相对路径，通过前端代理
+  const base = API_BASE || '/api';
+  return `${base}${endpoint}`;
+};
+
 interface ImportResult {
   success: boolean;
   message: string;
@@ -71,7 +81,7 @@ export default function ImportView() {
   // 加载允许的目录
   const loadAllowedDirectories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/import/allowed-directories`);
+      const res = await fetch(buildUrl('/import/allowed-directories'));
       if (res.ok) {
         const data = await res.json();
         setAllowedDirectories(data.directories || []);
@@ -88,7 +98,7 @@ export default function ImportView() {
   // Fetch logs for a specific task
   const fetchLogs = async (taskId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/import/logs/${taskId}`);
+      const res = await fetch(buildUrl(`/import/logs/${taskId}`));
       if (res.ok) {
         const data = await res.json();
         setLogs(data.logs || []);
@@ -104,7 +114,7 @@ export default function ImportView() {
 
     const interval = setInterval(async () => {
       try {
-        const statusRes = await fetch(`${API_BASE}/import/status/${currentTaskId}`);
+        const statusRes = await fetch(buildUrl(`/import/status/${currentTaskId}`));
         if (statusRes.ok) {
           const data = await statusRes.json();
           setResult(data);
@@ -179,7 +189,7 @@ export default function ImportView() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${API_BASE}/import/json`, {
+      const response = await fetch(buildUrl('/import/json'), {
         method: 'POST',
         body: formData,
       });
@@ -227,7 +237,7 @@ export default function ImportView() {
     setShowLogs(true);
 
     try {
-      const response = await fetch(`${API_BASE}/import/from-path`, {
+      const response = await fetch(buildUrl('/import/from-path'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -319,7 +329,7 @@ export default function ImportView() {
   const handleClearData = async () => {
     setClearing(true);
     try {
-      const res = await fetch(`${API_BASE}/import/clear-data`, {
+      const res = await fetch(buildUrl('/import/clear-data'), {
         method: 'POST'
       });
       if (res.ok) {
