@@ -56,7 +56,6 @@ export default function ImportView() {
   const [file, setFile] = useState<File | null>(null);
   const [filePath, setFilePath] = useState('');
   const [importMethod, setImportMethod] = useState<'upload' | 'path'>('path');
-  const [fileType, setFileType] = useState<'json' | 'jsonl'>('json');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -235,7 +234,7 @@ export default function ImportView() {
         },
         body: JSON.stringify({
           file_path: filePath,
-          file_type: fileType,
+          file_type: 'auto',
         }),
       });
 
@@ -454,20 +453,10 @@ export default function ImportView() {
             </p>
           </div>
 
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              文件类型
-            </label>
-            <select
-              value={fileType}
-              onChange={(e) => setFileType(e.target.value as 'json' | 'jsonl')}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="json">JSON (标准格式)</option>
-              <option value="jsonl">JSONL (每行一条，适合大文件)</option>
-            </select>
-            <p className="mt-2 text-sm text-slate-600">
-              {fileType === 'json' ? '标准 JSON 数组或对象格式' : 'JSONL 格式：每行一个独立的 JSON 对象，推荐用于超大文件'}
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <p className="text-sm text-blue-700">
+              <span className="font-medium">💡 自动格式识别：</span>
+              系统会自动检测 JSON 或 JSONL 格式，无需手动选择
             </p>
           </div>
 
@@ -763,8 +752,9 @@ export default function ImportView() {
           <div className="text-sm text-blue-900">
             <p className="font-medium mb-1">提示</p>
             <ul className="space-y-1 text-blue-700">
-              <li>• 支持单文件导入和批量导入（JSONL 格式）</li>
-              <li>• 推荐 JSONL 格式用于超大文件（每行一个 JSON 对象）</li>
+              <li>• 支持 JSON 和 JSONL 格式，系统自动识别</li>
+              <li>• JSON: 标准数组或对象格式</li>
+              <li>• JSONL: 每行一个 JSON 对象，推荐用于超大文件</li>
               <li>• 本地路径导入无需拷贝文件，直接读取</li>
               <li>• 导入后可在 <strong>Trajectories</strong> 页面查看数据</li>
               <li>• 重复的 trajectory_id 会被跳过</li>
