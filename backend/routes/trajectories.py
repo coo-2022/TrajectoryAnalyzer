@@ -44,6 +44,8 @@ async def list_trajectories(
     step_count_max: Optional[int] = None,
     exec_time_min: Optional[float] = None,
     exec_time_max: Optional[float] = None,
+    # 全局搜索参数
+    search: Optional[str] = None,
     # 排序参数
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$")
@@ -117,6 +119,10 @@ async def list_trajectories(
         filters["exec_time_min"] = exec_time_min
     if exec_time_max is not None:
         filters["exec_time_max"] = exec_time_max
+
+    # 全局搜索：搜索 trajectory_id 或 data_id（模糊匹配）
+    if search:
+        filters["search"] = search
 
     # 排序参数
     sort_params = None

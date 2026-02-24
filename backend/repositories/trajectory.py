@@ -401,6 +401,12 @@ class TrajectoryRepository:
                 reasons_str = ", ".join(safe_reasons)
                 clauses.append(f"termination_reason IN ({reasons_str})")
 
+        # 全局搜索：搜索 trajectory_id 或 data_id
+        if "search" in filters and filters["search"]:
+            safe_value = filters["search"].replace("'", "''")
+            # 使用 OR 条件搜索 trajectory_id 或 data_id
+            clauses.append(f"(trajectory_id LIKE '%{safe_value}%' OR data_id LIKE '%{safe_value}%')")
+
         # Reward字段：支持范围和精确匹配（数值类型，无需转义）
         if "reward_exact" in filters and filters["reward_exact"] is not None:
             clauses.append(f"reward = {float(filters['reward_exact'])}")
