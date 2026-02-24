@@ -4,6 +4,8 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Body
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
+from pathlib import Path
+import json
 
 from backend.models.import_result import ImportResult
 from backend.services.import_service import ImportService
@@ -17,10 +19,72 @@ router = APIRouter(prefix="/api/import", tags=["import"])
 service = ImportService(get_db_path(), create_default_vector_func())
 
 
+def detect_file_format(file_path: str) -> tuple[str, Optional[str]]:
+    """自动检测文件格式
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        tuple: (format_type, error_message)
+        - format_type: "json", "jsonl", 或 "unknown"
+        - error_message: 如果检测失败，返回错误信息；成功返回 None
+    """
+    path = Path(file_path).expanduser().resolve()
+
+    if not path.exists():
+        return "unknown", f"文件不存在: {file_path}"
+
+    if not path.is_file():
+        return "unknown", f"路径不是文件: {file_path}"
+
+    # 首先检查文件扩展名
+    suffix = path.suffix.lower()
+    if suffix == '.jsonl':
+        return "jsonl", None
+    if suffix == '.json':
+        return "json", None
+
+    # 如果扩展名不明确，尝试读取文件内容判断
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            first_line = f.readline().strip()
+
+        if not first_line:
+            return "unknown", "文件为空"
+
+        # 尝试解析第一行作为 JSON
+        try:
+            json.loads(first_line)
+            # 如果能解析，可能是 JSONL（每行一个 JSON 对象）
+            # 再检查整个文件是否是合法的 JSON（数组或对象）
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            try:
+                parsed = json.loads(content)
+                # 如果是数组，就是 JSON；如果是对象，需要进一步判断
+                if isinstance(parsed, list):
+                    return "json", None
+                # 如果是对象，可能是 JSON 也可能是 JSONL 的一行
+                # 检查文件是否有换行符
+                if '\n' in content:
+                    # 有多行，可能是 JSONL
+                    return "jsonl", None
+                return "json", None
+            except json.JSONDecodeError:
+                # 整个文件不是合法 JSON，但每行是，说明是 JSONL
+                return "jsonl", None
+        except json.JSONDecodeError:
+            return "unknown", "文件格式不正确：不是有效的 JSON 或 JSONL 格式"
+
+    except Exception as e:
+        return "unknown", f"读取文件失败: {str(e)}"
+
+
 class FilePathRequest(BaseModel):
     """文件路径请求模型"""
     file_path: str
-    file_type: str = "json"  # json 或 jsonl
+    file_type: str = "auto"  # auto, json, 或 jsonl
 
 
 @router.post("/json", response_model=Dict[str, Any], status_code=202)
@@ -77,15 +141,34 @@ async def import_from_path(request: FilePathRequest):
     支持格式：
     - JSON: 标准JSON数组或对象
     - JSONL: 每行一个JSON对象（推荐用于大文件）
+    - 自动检测: file_type="auto" 时自动识别格式（默认）
     """
     try:
-        if request.file_type == "jsonl":
+        # 确定文件格式
+        file_type = request.file_type.lower()
+
+        if file_type == "auto":
+            # 自动检测格式
+            detected_format, error_msg = detect_file_format(request.file_path)
+            if detected_format == "unknown":
+                raise HTTPException(status_code=400, detail=error_msg or "无法识别文件格式")
+            file_type = detected_format
+            logger.info("import_detect", f"自动检测到文件格式: {file_type}", file_path=request.file_path)
+
+        # 验证文件格式是否支持
+        if file_type not in ["json", "jsonl"]:
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file_type}。支持的格式: json, jsonl, auto")
+
+        # 执行导入
+        if file_type == "jsonl":
             result = await service.import_from_jsonl(request.file_path)
         else:
             result = await service.import_from_json(request.file_path)
 
         return result.model_dump()
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
