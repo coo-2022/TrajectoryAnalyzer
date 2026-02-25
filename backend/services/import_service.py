@@ -734,6 +734,9 @@ class ImportService:
                 # 没有找到完整的JSON对象
                 return None
 
+            # 记录解析调试信息
+            debug_info = []
+
             with open(path, 'r', encoding='utf-8') as f:
                 for line in f:
                     line_count += 1
@@ -766,6 +769,15 @@ class ImportService:
                 obj = try_parse_buffer()
                 if obj and obj is not True:
                     process_json_object(obj, line_count)
+                elif obj is None:
+                    # 剩余内容无法解析为完整JSON
+                    error_detail = f"文件末尾有无法解析的内容: {json_buffer[:200]}"
+                    logger.error(task_id, error_detail)
+                    debug_info.append({
+                        "line": line_count,
+                        "error": error_detail,
+                        "buffer_preview": json_buffer[:500]
+                    })
 
             # 插入剩余记录
             if batch:
@@ -785,6 +797,12 @@ class ImportService:
             result.status = "completed"
             result.completed_at = time.time()
             result.message = f"Imported {result.imported_count} trajectories from JSONL"
+
+            # 如果有调试信息，添加到结果中
+            if debug_info:
+                result.errors.append(f"Debug info: {len(debug_info)} parse errors")
+                for info in debug_info[:5]:  # 只显示前5个
+                    result.errors.append(f"Line {info['line']}: {info['error'][:100]}")
 
             elapsed_time = time.time() - start_time
             logger.info(task_id, "导入完成",
