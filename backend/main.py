@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from backend.config import settings, get_db_path
-from backend.routes import trajectories, import_route, analysis, visualization, export, questions, analysis_stats
+from backend.routes import trajectories, import_route, analysis, visualization, export, questions, analysis_stats, training_stats
 
 # ==========================================
 # 初始化缓存管理器
@@ -64,6 +64,7 @@ app.include_router(trajectories.router)
 app.include_router(import_route.router)
 app.include_router(analysis.router)
 app.include_router(analysis_stats.router)
+app.include_router(training_stats.router)
 app.include_router(visualization.router)
 app.include_router(export.router)
 app.include_router(questions.router)
