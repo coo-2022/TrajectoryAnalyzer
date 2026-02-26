@@ -9,6 +9,12 @@ from backend.config import settings, get_db_path
 from backend.routes import trajectories, import_route, analysis, visualization, export, questions, analysis_stats
 
 # ==========================================
+# 初始化缓存管理器
+# ==========================================
+from backend.infrastructure import init_caches
+init_caches()
+
+# ==========================================
 # 全局Service实例（复用缓存）
 # ==========================================
 from backend.services.trajectory_service import TrajectoryService

@@ -75,7 +75,61 @@ def detect_file_format(file_path: str) -> tuple[str, Optional[str]]:
                 # 整个文件不是合法 JSON，但每行是，说明是 JSONL
                 return "jsonl", None
         except json.JSONDecodeError:
-            return "unknown", "文件格式不正确：不是有效的 JSON 或 JSONL 格式"
+            # 第一行不是完整 JSON，可能是多行 JSONL 格式
+            # 尝试读取更多内容来判断
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    # 读取前 10 行或前 10KB 内容
+                    lines = []
+                    for i, line in enumerate(f):
+                        if i >= 10:
+                            break
+                        lines.append(line)
+                    sample_content = ''.join(lines).strip()
+
+                # 尝试找到第一个完整的 JSON 对象
+                # 使用括号匹配
+                brace_count = 0
+                in_string = False
+                escape_next = False
+                obj_start = -1
+
+                for i, char in enumerate(sample_content):
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    if char == '\\' and in_string:
+                        escape_next = True
+                        continue
+                    if char == '"' and not in_string:
+                        in_string = True
+                        continue
+                    if char == '"' and in_string:
+                        in_string = False
+                        continue
+                    if not in_string:
+                        if char == '{':
+                            if brace_count == 0:
+                                obj_start = i
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0 and obj_start >= 0:
+                                # 尝试解析找到的完整对象
+                                try:
+                                    obj = json.loads(sample_content[obj_start:i+1])
+                                    # 如果能解析，说明是多行 JSONL 格式
+                                    return "jsonl", None
+                                except json.JSONDecodeError:
+                                    continue
+
+                # 如果找不到完整对象，但文件以 { 开头，可能是多行 JSONL
+                if sample_content.startswith('{'):
+                    return "jsonl", None
+
+                return "unknown", "文件格式不正确：不是有效的 JSON 或 JSONL 格式"
+            except Exception:
+                return "unknown", "文件格式不正确：不是有效的 JSON 或 JSONL 格式"
 
     except Exception as e:
         return "unknown", f"读取文件失败: {str(e)}"
@@ -330,54 +384,13 @@ async def clear_all_data():
         global service
         service = ImportService(get_db_path(), create_default_vector_func())
 
-        # 重新初始化其他模块的服务
+        # 清除所有缓存
         try:
-            from backend.routes import trajectories, analysis, export, visualization, analysis_stats, questions
-
-            # 重置 trajectories 服务
-            if hasattr(trajectories, 'service'):
-                from backend.services.trajectory_service import TrajectoryService
-                trajectories.service = TrajectoryService(get_db_path(), create_default_vector_func())
-
-            # 重置 analysis 服务
-            if hasattr(analysis, 'service'):
-                from backend.services.analysis_service import AnalysisService
-                analysis.service = AnalysisService(get_db_path(), create_default_vector_func())
-
-            # 重置 export 服务
-            if hasattr(export, 'service'):
-                from backend.services.trajectory_service import TrajectoryService
-                export.service = TrajectoryService(get_db_path(), create_default_vector_func())
-
-            # 重置 visualization 服务
-            if hasattr(visualization, 'service'):
-                from backend.services.visualization_service import VisualizationService
-                visualization.service = VisualizationService(get_db_path(), create_default_vector_func())
-
-            # 重置 analysis_stats 服务
-            if hasattr(analysis_stats, 'service'):
-                from backend.services.analysis_stats_service import AnalysisStatsService
-                analysis_stats.service = AnalysisStatsService()
-            if hasattr(analysis_stats, '_repository'):
-                from backend.repositories.trajectory import TrajectoryRepository
-                analysis_stats._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
-
-            # 重置 questions 模块的 repository 和缓存
-            if hasattr(questions, '_repository'):
-                from backend.repositories.trajectory import TrajectoryRepository
-                questions._repository = TrajectoryRepository(get_db_path(), create_default_vector_func())
-            if hasattr(questions, '_questions_cache'):
-                questions._questions_cache["data"] = None
-                questions._questions_cache["expire_time"] = 0
-
-            # 重置 main 模块的全局 trajectory_service
-            from backend import main
-            if hasattr(main, '_trajectory_service') and main._trajectory_service is not None:
-                from backend.services.trajectory_service import TrajectoryService
-                main._trajectory_service = TrajectoryService(get_db_path(), create_default_vector_func())
-
+            from backend.infrastructure import CacheManager
+            count = CacheManager.clear_all()
+            logger.info(f"clear_data", f"已清除 {count} 个缓存")
         except Exception as e:
-            logger.error(f"重新初始化服务时出错: {e}")
+            logger.error(f"清除缓存时出错: {e}")
             # 不抛出异常，因为数据已经清除成功
 
         return {

@@ -6,3 +6,4 @@ lancedb
 pandas
 python-multipart
 scipy
+cachetools>=5.3.0
