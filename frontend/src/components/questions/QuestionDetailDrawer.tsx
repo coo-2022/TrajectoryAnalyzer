@@ -204,7 +204,7 @@ export const QuestionDetailDrawer: React.FC<QuestionDetailDrawerProps> = ({
 
       {/* Drawer */}
       <div
-        className={`fixed right-0 top-0 h-full w-full max-w-2xl bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-out ${
+        className={`fixed right-0 top-0 h-full w-1/2 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
