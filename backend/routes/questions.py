@@ -92,7 +92,7 @@ async def list_questions(
 ):
     """获取问题列表（带缓存）"""
     # 使用 CacheManager
-    cache = CacheManager.get_or_create("questions.list", namespace="questions", maxsize=10, ttl=60)
+    cache = CacheManager.get_or_create("questions.list", namespace="questions", maxsize=10, ttl=600)
 
     # 尝试从缓存获取完整列表
     cache_key = "all_questions"

@@ -24,8 +24,8 @@ class CacheManager:
 
     使用示例：
         # 1. 注册缓存
-        CacheManager.register("trajectory_list", TTLCache(maxsize=1000, ttl=300))
-        CacheManager.register("trajectory_stats", TTLCache(maxsize=10, ttl=60))
+        CacheManager.register("trajectory_list", TTLCache(maxsize=1000, ttl=600))
+        CacheManager.register("trajectory_stats", TTLCache(maxsize=10, ttl=600))
 
         # 2. 装饰器使用
         @CacheManager.cached("trajectory_list", key_func=lambda page, size, **kw: (page, size))
@@ -45,7 +45,7 @@ class CacheManager:
     _caches: Dict[str, Any] = {}
     _namespaces: Dict[str, List[str]] = {}  # 命名空间 -> 缓存名称列表
     _default_maxsize = 1000
-    _default_ttl = 300
+    _default_ttl = 600
 
     @classmethod
     def register(
@@ -266,23 +266,23 @@ class CacheManager:
 
 # 预定义常用缓存配置
 CACHE_CONFIGS = {
-    # 轨迹列表查询缓存：5分钟，最多1000条
-    "trajectory.list": {"namespace": "trajectory", "maxsize": 1000, "ttl": 300},
+    # 轨迹列表查询缓存：10分钟，最多1000条
+    "trajectory.list": {"namespace": "trajectory", "maxsize": 1000, "ttl": 600},
 
-    # 轨迹统计缓存：1分钟，最多10条
-    "trajectory.stats": {"namespace": "trajectory", "maxsize": 10, "ttl": 60},
+    # 轨迹统计缓存：10分钟，最多10条
+    "trajectory.stats": {"namespace": "trajectory", "maxsize": 10, "ttl": 600},
 
-    # 问题列表缓存：1分钟
-    "questions.list": {"namespace": "questions", "maxsize": 100, "ttl": 60},
+    # 问题列表缓存：10分钟
+    "questions.list": {"namespace": "questions", "maxsize": 100, "ttl": 600},
 
-    # 分析统计缓存：2分钟
-    "analysis.stats": {"namespace": "analysis", "maxsize": 50, "ttl": 120},
+    # 分析统计缓存：10分钟
+    "analysis.stats": {"namespace": "analysis", "maxsize": 50, "ttl": 600},
 
     # 导出数据缓存：10分钟（导出通常比较慢）
     "export.data": {"namespace": "export", "maxsize": 50, "ttl": 600},
 
-    # 可视化数据缓存：5分钟
-    "viz.data": {"namespace": "visualization", "maxsize": 100, "ttl": 300},
+    # 可视化数据缓存：10分钟
+    "viz.data": {"namespace": "visualization", "maxsize": 100, "ttl": 600},
 }
 
 
