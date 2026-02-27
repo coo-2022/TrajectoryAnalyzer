@@ -121,11 +121,20 @@ async def list_questions(
 async def get_question_trajectories(
     question_id: str,
     page: int = Query(1, ge=1),
-    pageSize: int = Query(20, ge=1, le=100)
+    pageSize: int = Query(20, ge=1, le=100),
+    training_id: Optional[str] = Query(None, description="Filter by training ID"),
+    epoch_id: Optional[int] = Query(None, description="Filter by epoch ID")
 ):
-    """获取某个问题的所有轨迹"""
+    """获取某个问题的所有轨迹，支持按 training_id 和 epoch_id 过滤"""
+    # 构建过滤条件
+    filters = {"questionId": question_id}
+    if training_id:
+        filters["training_id"] = training_id
+    if epoch_id is not None:
+        filters["epoch_id"] = epoch_id
+
     # 使用filter方法筛选
-    trajectories = _repository.filter({"questionId": question_id}, limit=pageSize * page)
+    trajectories = _repository.filter(filters, limit=pageSize * page)
 
     total = len(trajectories)
     start = (page - 1) * pageSize

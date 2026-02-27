@@ -72,7 +72,7 @@ export default function App() {
       case "dashboard":
         return <DashboardView onNavigate={handleNavigateToTrajectories} />;
       case "questions":
-        return <QuestionsView onNavigate={handleNavigateToTrajectories} />;
+        return <QuestionsView />;
       case "trajectories":
         return (
           <TrajectoryView
