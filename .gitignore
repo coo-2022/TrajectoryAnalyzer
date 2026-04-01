@@ -44,10 +44,21 @@ data/
 /tmp/
 
 # OS
-.DS_Store
-Thumbs.db
-
-# Node modules (if any frontend)
-node_modules/
-dist/
-.cache/
+ .DS_Store
+ Thumbs.db
++
++# Auto-generated files
++requirements.txt.gen
++.coverage
++
++# PID files
++*.pid
++
++# Test artifacts
++test-*.jsonl
++sample_data_*.json
+ 
+ # Node modules (if any frontend)
+ node_modules/
+ dist/
+ .cache/

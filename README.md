@@ -23,39 +23,24 @@ AI Agent 轨迹分析和管理系统，支持轨迹存储、失效分析、可�
 
 ```
 trajectory_store/
-├── backend/
+├── backend/                 # 后端代码
 │   ├── models/              # 数据模型
-│   │   ├── trajectory.py    # Trajectory模型
-│   │   ├── analysis.py      # AnalysisResult模型
-│   │   └── import_result.py # ImportResult模型
 │   ├── repositories/        # 数据访问层
-│   │   └── trajectory.py    # TrajectoryRepository
 │   ├── services/            # 业务服务层
-│   │   ├── trajectory_service.py
-│   │   ├── import_service.py
-│   │   ├── analysis_service.py
-│   │   └── visualization_service.py
 │   ├── analyzers/           # 分析引擎
-│   │   └── failure_analyzer.py
 │   ├── routes/              # API路由
-│   │   ├── trajectories.py
-│   │   ├── import_route.py
-│   │   ├── analysis.py
-│   │   ├── visualization.py
-│   │   └── export.py
 │   ├── config.py            # 配置
 │   └── main.py              # FastAPI应用
 ├── tests/                   # 测试用例
-│   ├── conftest.py
-│   ├── test_basic.py
-│   ├── test_trajectory_service.py
-│   ├── test_import_service.py
-│   ├── test_analysis_service.py
-│   ├── test_visualization_service.py
-│   └── test_api.py
+│   ├── scripts/             # 测试脚本和工具
+│   └── *.py                 # 测试文件
+├── scripts/                 # 实用脚本
+│   ├── run_server.py        # 启动脚本
+│   └── *.py                 # 其他脚本
+├── docs/                    # 项目文档
+├── samples/                 # 示例数据
+├── frontend/                # 前端代码
 ├── venv/                    # 虚拟环境
-├── demo.py                  # 演示脚本
-├── run_server.py            # 启动脚本
 ├── requirements.txt         # 依赖列表
 └── README.md               # 本文件
 ```
@@ -92,14 +77,14 @@ pip install -r requirements-core.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ### 2. 运行演示
 
 ```bash
-python demo.py
+python tests/scripts/demo.py
 ```
 
 ### 3. 启动API服务器
 
 ```bash
 # 方式1：使用启动脚本
-python run_server.py
+python scripts/run_server.py
 
 # 方式2：直接使用uvicorn
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
